@@ -10,3 +10,4 @@ dist
 data/
 public/cesium/
 test-results/
+tsconfig.tsbuildinfo

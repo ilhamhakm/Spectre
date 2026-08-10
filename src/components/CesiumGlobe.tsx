@@ -18,6 +18,7 @@ import { mountGibsLayer, type GibsLayerHandle } from "@/globe/layers/gibs-layer"
 import { mountRoadsLayer, type RoadsLayerHandle } from "@/globe/layers/roads-layer";
 import { roadsCacheKey, getCachedRoads, setCachedRoads } from "@/globe/roads-cache";
 import { mountCctvLayer, type CctvLayerHandle } from "@/globe/layers/cctv-layer";
+import { mountKartaviewLayer, type KartaviewLayerHandle } from "@/globe/layers/kartaview-layer";
 import { mountTrafficLayer, type TrafficLayerHandle } from "@/globe/layers/traffic-layer";
 import { mountGoogleTilesLayer } from "@/globe/layers/google-tiles-layer";
 import { createSentinelLayer } from "@/globe/layers/sentinel-layer";
@@ -29,6 +30,7 @@ import type { MilitaryFlight } from "@/lib/sources/airplanes-live";
 import type { ProtestEvent } from "@/lib/types";
 import type { RoadSegment } from "@/lib/sources/overpass";
 import type { CctvCamera } from "@/lib/sources/cctv";
+import type { KartaviewPhoto } from "@/lib/sources/kartaview";
 import type { VehicleSeed } from "@/lib/sources/traffic";
 
 type Props = {
@@ -67,6 +69,7 @@ export default function CesiumGlobe({
   const gibsHandleRef = useRef<GibsLayerHandle | null>(null);
   const roadsHandleRef = useRef<RoadsLayerHandle | null>(null);
   const cctvHandleRef = useRef<CctvLayerHandle | null>(null);
+  const kartaviewHandleRef = useRef<KartaviewLayerHandle | null>(null);
   const trafficHandleRef = useRef<TrafficLayerHandle | null>(null);
   const pollTrafficRef = useRef<((force?: boolean) => void) | null>(null);
   const satellitesHandleRef = useRef<ReturnType<typeof createSatellitesLayer> | null>(null);
@@ -769,6 +772,17 @@ export default function CesiumGlobe({
       console.error("[globe] gibs layer failed", err);
     }
 
+    // KartaView street-level photo layer — mounted once; fed by a fetch
+    // effect that polls /api/kartaview with the current camera bbox when
+    // the layer is toggled visible.
+    let kartaviewHandle: KartaviewLayerHandle | null = null;
+    try {
+      kartaviewHandle = mountKartaviewLayer(viewer);
+      kartaviewHandleRef.current = kartaviewHandle;
+    } catch (err) {
+      console.error("[globe] kartaview layer failed", err);
+    }
+
     return () => {
       disposed = true;
       milDisposed = true;
@@ -798,6 +812,8 @@ export default function CesiumGlobe({
       if (satTimer) clearInterval(satTimer);
       satellitesHandle?.destroy();
       sentinelHandleRef.current?.destroy();
+      kartaviewHandle?.destroy();
+      kartaviewHandleRef.current = null;
       flightsHandleRef.current = null;
       milHandleRef.current = null;
       eventsHandleRef.current = null;
@@ -842,6 +858,7 @@ export default function CesiumGlobe({
     // roads show with congestion coloring; when off, both are hidden.
     roadsHandleRef.current?.setShow(layerVisibility.traffic ?? true);
     cctvHandleRef.current?.setShow(layerVisibility.cctv ?? true);
+    kartaviewHandleRef.current?.setShow(layerVisibility.kartaview ?? true);
     trafficHandleRef.current?.setShow(layerVisibility.traffic ?? true);
   }, [layerVisibility, ready]);
 
@@ -1012,6 +1029,97 @@ export default function CesiumGlobe({
       gibsHandleRef.current?.setDate(gibsDate);
     }
   }, [gibsEnabled, gibsDate, ready]);
+
+  // KartaView street-level photos — fetch on toggle + refetch on camera move.
+  // Polls /api/kartaview with the current camera viewport bbox (computed via
+  // viewer.camera.computeViewRectangle()) so only photos in view are loaded.
+  const kartaviewEnabled = layerVisibility.kartaview ?? false;
+  useEffect(() => {
+    if (!ready || !kartaviewEnabled) return;
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+    const setLayerLoading = useGlobeStore.getState().setLayerLoading;
+    let aborted = false;
+    let abort: AbortController | null = null;
+    let moveTimer: ReturnType<typeof setTimeout> | null = null;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+    const computeBbox = (): string => {
+      try {
+        const carto = viewer.camera.positionCartographic;
+        const rect = viewer.camera.computeViewRectangle();
+        const span = Math.min(5, Math.max(0.5, carto.height / 50_000));
+        let west: number, south: number, east: number, north: number;
+        if (rect) {
+          west = Cesium.Math.toDegrees(rect.west);
+          south = Cesium.Math.toDegrees(rect.south);
+          east = Cesium.Math.toDegrees(rect.east);
+          north = Cesium.Math.toDegrees(rect.north);
+          const latCenter = (south + north) / 2;
+          const lonCenter = (west + east) / 2;
+          const latHalf = Math.max((north - south) / 2, span);
+          const lonHalf = Math.max((east - west) / 2, span);
+          west = lonCenter - lonHalf;
+          east = lonCenter + lonHalf;
+          south = latCenter - latHalf;
+          north = latCenter + latHalf;
+        } else {
+          const lat = Cesium.Math.toDegrees(carto.latitude);
+          const lon = Cesium.Math.toDegrees(carto.longitude);
+          west = lon - span;
+          south = lat - span;
+          east = lon + span;
+          north = lat + span;
+        }
+        return [south, west, north, east].map((v) => v.toFixed(3)).join(",");
+      } catch {
+        return "";
+      }
+    };
+
+    const poll = async () => {
+      if (aborted || viewer.isDestroyed()) return;
+      const bbox = computeBbox();
+      if (!bbox) return;
+      abort?.abort();
+      abort = new AbortController();
+      setLayerLoading("kartaview", true);
+      try {
+        const res = await fetch(`/api/kartaview?bbox=${encodeURIComponent(bbox)}`, {
+          signal: AbortSignal.any([abort.signal, AbortSignal.timeout(30_000)]),
+        });
+        if (!res.ok) return;
+        const data: { photos?: KartaviewPhoto[] } = await res.json();
+        if (data.photos && !aborted && !viewer.isDestroyed()) {
+          kartaviewHandleRef.current?.setPhotos(data.photos);
+        }
+      } catch {
+        // network error or timeout — skip silently
+      } finally {
+        setLayerLoading("kartaview", false);
+      }
+    };
+
+    const onCameraMove = () => {
+      if (moveTimer) clearTimeout(moveTimer);
+      moveTimer = setTimeout(() => { void poll(); }, 2_000);
+    };
+
+    const initialTimer = setTimeout(() => void poll(), 1_500);
+    pollTimer = setInterval(() => void poll(), 300_000);
+    viewer.camera.changed.addEventListener(onCameraMove);
+
+    return () => {
+      aborted = true;
+      if (pollTimer) clearInterval(pollTimer);
+      if (moveTimer) clearTimeout(moveTimer);
+      if (initialTimer) clearTimeout(initialTimer);
+      abort?.abort();
+      try { viewer.camera.changed.removeEventListener(onCameraMove); } catch { /* best effort */ }
+      kartaviewHandleRef.current?.setPhotos([]);
+      setLayerLoading("kartaview", false);
+    };
+  }, [kartaviewEnabled, ready]);
 
   // Google Photorealistic 3D Tiles — strictly opt-in. Mounts ONLY when the
   // user flips the 3D TILES button (googleTilesEnabled), so no Google Maps

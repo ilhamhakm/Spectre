@@ -253,6 +253,7 @@ export const useGlobeStore = create<GlobeState>((set) => ({
     satellites: false,
     sentinel: false,
     gibs: false,
+    kartaview: false,
     borders: false,
     bldgHighlight: false,
   },

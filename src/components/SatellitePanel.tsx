@@ -184,10 +184,10 @@ export default function SatellitePanel() {
                 marginBottom: 3,
                 background: active
                   ? "rgba(0, 212, 255, 0.12)"
-                  : "rgba(0, 212, 255, 0.03)",
+                  : "rgba(8, 14, 22, 0.55)",
                 border: active
                   ? "1px solid rgba(0, 212, 255, 0.6)"
-                  : "1px solid rgba(0, 212, 255, 0.2)",
+                  : "1px solid rgba(0, 212, 255, 0.4)",
                 borderRadius: 4,
                 cursor: "pointer",
                 transition: "background 0.15s, border-color 0.15s",

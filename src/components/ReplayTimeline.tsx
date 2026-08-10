@@ -86,7 +86,7 @@ export default function ReplayTimeline() {
     justifyContent: "center",
     background:
       color === "cyan"
-        ? "rgba(0, 212, 255, 0.06)"
+        ? "rgba(8, 14, 22, 0.65)"
         : "rgba(255, 80, 80, 0.06)",
     border: `1px solid ${
       color === "cyan"
@@ -107,7 +107,7 @@ export default function ReplayTimeline() {
       onClick={() => stepSentinelDate(dir, "weekly")}
       style={btnStyle("cyan")}
       onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(0, 212, 255, 0.15)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(0, 212, 255, 0.06)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(8, 14, 22, 0.65)"; }}
       title={dir === "back" ? "Previous week" : "Next week"}
     >
       {dir === "back" ? "\u2039" : "\u203a"}
@@ -121,7 +121,7 @@ export default function ReplayTimeline() {
       onClick={() => stepSentinelDate(dir, "monthly")}
       style={{ ...btnStyle("cyan"), width: 32, fontSize: 10 }}
       onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(0, 212, 255, 0.15)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(0, 212, 255, 0.06)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(8, 14, 22, 0.65)"; }}
       title={dir === "back" ? "Previous month" : "Next month"}
     >
       {dir === "back" ? "\u00ab" : "\u00bb"}
@@ -135,7 +135,7 @@ export default function ReplayTimeline() {
       onClick={() => stepGibsDate(dir, "monthly")}
       style={{ ...btnStyle("cyan"), width: 32, fontSize: 10 }}
       onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(0, 212, 255, 0.15)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(0, 212, 255, 0.06)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(8, 14, 22, 0.65)"; }}
       title={dir === "back" ? "Previous month" : "Next month"}
     >
       {dir === "back" ? "\u00ab" : "\u00bb"}
@@ -149,7 +149,7 @@ export default function ReplayTimeline() {
       onClick={() => stepGibsDate(dir, "weekly")}
       style={btnStyle("cyan")}
       onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(0, 212, 255, 0.15)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(0, 212, 255, 0.06)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(8, 14, 22, 0.65)"; }}
       title={dir === "back" ? "Previous week" : "Next week"}
     >
       {dir === "back" ? "\u2039" : "\u203a"}
@@ -182,7 +182,7 @@ export default function ReplayTimeline() {
           <div
             style={{
               background: "transparent",
-              border: "1px solid rgba(0, 212, 255, 0.3)",
+              border: "1px solid rgba(0, 212, 255, 0.5)",
               borderRadius: 4,
               padding: "5px 14px",
               color: "#00D4FF",
@@ -210,7 +210,7 @@ export default function ReplayTimeline() {
           <div
             style={{
               background: "transparent",
-              border: "1px solid rgba(0, 212, 255, 0.3)",
+              border: "1px solid rgba(0, 212, 255, 0.5)",
               borderRadius: 4,
               padding: "5px 14px",
               color: "#00D4FF",

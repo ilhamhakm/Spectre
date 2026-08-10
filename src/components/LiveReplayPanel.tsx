@@ -121,8 +121,8 @@ export default function LiveReplayPanel() {
   const backButtonStyle: React.CSSProperties = {
     width: "100%",
     padding: "5px 8px",
-    background: "rgba(0, 212, 255, 0.03)",
-    border: "1px solid rgba(0, 212, 255, 0.2)",
+    background: "rgba(8, 14, 22, 0.55)",
+    border: "1px solid rgba(0, 212, 255, 0.4)",
     color: "#7ac4e0",
     fontSize: 9,
     fontFamily: "inherit",
@@ -202,7 +202,7 @@ export default function LiveReplayPanel() {
               e.currentTarget.style.color = "#00D4FF";
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.background = "rgba(0, 212, 255, 0.03)";
+              e.currentTarget.style.background = "rgba(8, 14, 22, 0.55)";
               e.currentTarget.style.color = "#7ac4e0";
             }}
           >

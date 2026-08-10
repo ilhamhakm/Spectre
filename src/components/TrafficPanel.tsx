@@ -58,8 +58,8 @@ export default function TrafficPanel() {
             onClick={() => toggleLayer("traffic")}
             style={{
               padding: "6px 8px",
-              background: "rgba(0, 212, 255, 0.03)",
-              border: "1px solid rgba(0, 212, 255, 0.3)",
+              background: "rgba(8, 14, 22, 0.55)",
+              border: "1px solid rgba(0, 212, 255, 0.5)",
               color: "#5ab3d4",
               fontSize: 10,
               fontFamily: "inherit",
@@ -93,10 +93,10 @@ export default function TrafficPanel() {
                 minHeight: 24,
                 background: active
                   ? "rgba(0, 212, 255, 0.12)"
-                  : "rgba(0, 212, 255, 0.03)",
+                  : "rgba(8, 14, 22, 0.55)",
                 border: active
                   ? "1px solid rgba(0, 212, 255, 0.6)"
-                  : "1px solid rgba(0, 212, 255, 0.2)",
+                  : "1px solid rgba(0, 212, 255, 0.4)",
                 color: active ? "#00D4FF" : "#5ab3d4",
                 fontSize: 10,
                 fontFamily: "inherit",
@@ -141,8 +141,8 @@ export default function TrafficPanel() {
             display: "flex",
             gap: 3,
             padding: "6px 10px",
-            background: "rgba(0, 212, 255, 0.03)",
-            border: "1px solid rgba(0, 212, 255, 0.2)",
+            background: "rgba(8, 14, 22, 0.55)",
+            border: "1px solid rgba(0, 212, 255, 0.4)",
             borderRadius: 6,
           }}
         >

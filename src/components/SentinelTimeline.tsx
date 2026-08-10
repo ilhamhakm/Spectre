@@ -49,7 +49,7 @@ export default function SentinelTimeline() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "rgba(0, 212, 255, 0.06)",
+          background: "rgba(8, 14, 22, 0.65)",
           border: "1px solid rgba(0, 212, 255, 0.4)",
           borderRadius: 4,
           color: "#5ab3d4",
@@ -61,7 +61,7 @@ export default function SentinelTimeline() {
           e.currentTarget.style.background = "rgba(0, 212, 255, 0.15)";
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.background = "rgba(0, 212, 255, 0.06)";
+          e.currentTarget.style.background = "rgba(8, 14, 22, 0.65)";
         }}
         title="Previous month"
       >
@@ -72,7 +72,7 @@ export default function SentinelTimeline() {
       <div
         style={{
           background: "transparent",
-          border: "1px solid rgba(0, 212, 255, 0.3)",
+          border: "1px solid rgba(0, 212, 255, 0.5)",
           borderRadius: 4,
           padding: "5px 14px",
           color: "#00D4FF",
@@ -97,7 +97,7 @@ export default function SentinelTimeline() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "rgba(0, 212, 255, 0.06)",
+          background: "rgba(8, 14, 22, 0.65)",
           border: "1px solid rgba(0, 212, 255, 0.4)",
           borderRadius: 4,
           color: "#5ab3d4",
@@ -109,7 +109,7 @@ export default function SentinelTimeline() {
           e.currentTarget.style.background = "rgba(0, 212, 255, 0.15)";
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.background = "rgba(0, 212, 255, 0.06)";
+          e.currentTarget.style.background = "rgba(8, 14, 22, 0.65)";
         }}
         title="Next month"
       >
