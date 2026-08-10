@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0a0c10;
+  --panel: #11141a;
+  --panel-2: #161a22;
+  --border: #232834;
+  --border-soft: #1c2029;
+  --text: #e6e8eb;
+  --text-dim: #8a909c;
+  --text-faint: #5a606c;
+  --accent: #d98b3a;
+  --accent-2: #4a8fd9;
+  --danger: #d94a4a;
+  --ok: #5ad97a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.mono {
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", "Consolas", monospace;
+}
+
+.entity-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 212, 255, 0.25);
+  border-radius: 4px;
+}
+.scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 212, 255, 0.5);
+}
+
+.grid-bg {
+  background-image: linear-gradient(rgba(35, 40, 52, 0.4) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(35, 40, 52, 0.4) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Reposition Cesium credits/attribution to bottom-left. */
+.cesium-viewer-bottom {
+  top: auto !important;
+  right: auto !important;
+  bottom: 4px !important;
+  left: 4px !important;
+  z-index: 1 !important;
+  font-size: 9px !important;
+  opacity: 0.5 !important;
+  pointer-events: none !important;
+}
+.cesium-widget-credits {
+  font-size: 9px !important;
+  opacity: 0.5 !important;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
