@@ -68,11 +68,15 @@ export function mountFlightsLayer(viewer: Cesium.Viewer): FlightsLayerHandle {
     // Re-apply visibility + image to every billboard. Solo mode hides ALL
     // other planes so only the tracked jet and its origin→destination arc
     // remain on the globe.
+    const cameraHeight = viewer.camera.positionCartographic.height;
+    const trackedScale = cameraHeight > 1_000_000 ? 0.55
+                       : cameraHeight > 300_000 ? 0.7
+                       : 0.85;
     for (const [id, b] of billboardMap) {
       const isTracked = callsign != null && id === targetIcao;
       b.show = !isSolo() || isTracked;
       (b as { image: unknown }).image = isTracked ? trackedIcon : icon;
-      b.scale = isTracked ? 1.25 : b.scale;
+      b.scale = isTracked ? trackedScale : b.scale;
     }
     for (const [id, l] of labelMap) {
       const isTracked = callsign != null && id === targetIcao;
@@ -85,11 +89,16 @@ export function mountFlightsLayer(viewer: Cesium.Viewer): FlightsLayerHandle {
     const seen = new Set<string>();
     const cameraHeight = viewer.camera.positionCartographic.height;
     const showLabels = cameraHeight < 200_000; // only label below 200km
-    // Scale icon down when zoomed way out so a sky full of jets doesn't
-    // overwhelm the globe; scale up when zoomed in for legibility.
-    const baseScale = cameraHeight > 1_000_000 ? 0.55
-                     : cameraHeight > 300_000 ? 0.7
-                     : 0.85;
+    // Smaller, proportional icon scales. The previous values (0.55/0.7/0.85)
+    // made the planes look comically large against the globe. New values
+    // keep the plane visible at distance without dominating the view.
+    const baseScale = cameraHeight > 1_000_000 ? 0.32
+                     : cameraHeight > 300_000 ? 0.42
+                     : 0.52;
+    // Tracked jet: slightly larger so it stands out, but still proportional.
+    const trackedScale = cameraHeight > 1_000_000 ? 0.55
+                       : cameraHeight > 300_000 ? 0.7
+                       : 0.85;
 
     for (const f of flights) {
       seen.add(f.icao24);
@@ -107,7 +116,7 @@ export function mountFlightsLayer(viewer: Cesium.Viewer): FlightsLayerHandle {
       const isTracked = trackedCallsign != null && f.callsign.toUpperCase() === trackedCallsign;
       // Grounded planes render slightly smaller — they're parked, not flying.
       const groundScale = f.onGround ? 0.7 : 1.0;
-      const scale = (isTracked ? 1.25 : baseScale) * groundScale;
+      const scale = (isTracked ? trackedScale : baseScale) * groundScale;
       // In solo mode hide every plane except the tracked one.
       const soloVisible = !isSolo() || isTracked;
 

@@ -1211,6 +1211,10 @@ export default function CesiumGlobe({
     let live = false;
     let landedDest: string | null = null;
     let landedOriginCode: string | null = null;
+    // Resolved airport info (city + name) so the landed marker can show a
+    // friendly label like "Los Angeles · LAX" instead of just "KLAX".
+    let landedDestAirport: { city: string; name: string; icao: string } | null = null;
+    let landedOriginAirport: { city: string; name: string; icao: string } | null = null;
     // Exact parked position from the live feed (plane transmitting ADS-B on
     // the ramp). When null, the marker falls back to the trajectory's last
     // waypoint (the touchdown point).
@@ -1251,11 +1255,24 @@ export default function CesiumGlobe({
       // Honest label: "LANDED" when we know the destination airport (or a
       // live/trajectory touchdown position); "LAST KNOWN" when we only have
       // the origin airport from the last flight record or the live feed.
+      // Show city + ICAO when airport info is resolved, else just the code.
+      function formatAirportTag(
+        code: string | null,
+        airport: { city: string; name: string; icao: string } | null,
+      ): string {
+        if (!code && !airport) return "";
+        if (airport) {
+          const place = airport.city && airport.city.trim() ? airport.city : airport.name;
+          if (place && place !== airport.icao) return ` · ${place} · ${airport.icao}`;
+          return ` · ${airport.icao}`;
+        }
+        return code ? ` · ${code}` : "";
+      }
       let labelText = `${callsign} · LANDED`;
       if (anchor === landedAirport) {
-        labelText = `${callsign} · LANDED${landedDest ? ` · ${landedDest}` : ""}`;
+        labelText = `${callsign} · LANDED${formatAirportTag(landedDest, landedDestAirport)}`;
       } else if (anchor === landedOrigin) {
-        labelText = `${callsign} · LAST KNOWN${landedOriginCode ? ` · ${landedOriginCode}` : ""}`;
+        labelText = `${callsign} · LAST KNOWN${formatAirportTag(landedOriginCode, landedOriginAirport)}`;
       } else if (anchor === landedLastKnown) {
         labelText = `${callsign} · LAST KNOWN`;
       }
@@ -1382,8 +1399,8 @@ export default function CesiumGlobe({
           origin?: string | null;
           destination?: string | null;
           live?: boolean;
-          landedAirport?: { icao: string; name: string; lat: number; lon: number } | null;
-          landedOriginAirport?: { icao: string; name: string; lat: number; lon: number } | null;
+          landedAirport?: { icao: string; name: string; city?: string; lat: number; lon: number } | null;
+          landedOriginAirport?: { icao: string; name: string; city?: string; lat: number; lon: number } | null;
           lastKnownPosition?: { lat: number; lon: number; alt: number | null; lastContact: number } | null;
         } = await res.json();
         // Track airborne/live state so we can flip to the "landed here now"
@@ -1393,9 +1410,19 @@ export default function CesiumGlobe({
         if (data.origin) landedOriginCode = data.origin;
         if (data.landedAirport) {
           landedAirport = { lat: data.landedAirport.lat, lon: data.landedAirport.lon };
+          landedDestAirport = {
+            city: data.landedAirport.city ?? "",
+            name: data.landedAirport.name,
+            icao: data.landedAirport.icao,
+          };
         }
         if (data.landedOriginAirport) {
           landedOrigin = { lat: data.landedOriginAirport.lat, lon: data.landedOriginAirport.lon };
+          landedOriginAirport = {
+            city: data.landedOriginAirport.city ?? "",
+            name: data.landedOriginAirport.name,
+            icao: data.landedOriginAirport.icao,
+          };
         }
         if (data.lastKnownPosition) {
           landedLastKnown = { lat: data.lastKnownPosition.lat, lon: data.lastKnownPosition.lon };

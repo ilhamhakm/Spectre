@@ -51,9 +51,11 @@ export function mountMilitaryLayer(viewer: Cesium.Viewer): MilitaryLayerHandle {
     const seen = new Set<string>();
     const cameraHeight = viewer.camera.positionCartographic.height;
     const showLabels = cameraHeight < 200_000; // only label below 200km
-    const scale = cameraHeight > 1_000_000 ? 0.55
-                 : cameraHeight > 300_000 ? 0.7
-                 : 0.85;
+    // Smaller, proportional icon scales — matches flights-layer.ts so
+    // military and private planes render at the same visible size.
+    const scale = cameraHeight > 1_000_000 ? 0.32
+                 : cameraHeight > 300_000 ? 0.42
+                 : 0.52;
     // In solo mode military planes are hidden entirely.
     const soloVisible = !soloMode;
 

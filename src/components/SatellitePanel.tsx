@@ -116,45 +116,83 @@ export default function SatellitePanel() {
 
         {/* Starlink cluster toggle */}
         {satellites.some((s) => s.category === "constellation") && (
-          <div
-            onClick={() => {
-              const constellationIds = satellites
-                .filter((s) => s.category === "constellation")
-                .map((s) => s.id);
-              const allOn = constellationIds.every((id) => visibleSats[id]);
-              for (const id of constellationIds) {
-                if (allOn) {
-                  if (visibleSats[id]) toggleSatellite(id);
-                } else {
-                  if (!visibleSats[id]) toggleSatellite(id);
-                }
-              }
-              if (!allOn && constellationIds.length > 0) {
-                const firstConst = satellites.find(
-                  (s) => s.category === "constellation" && s.position,
-                );
-                if (firstConst) flyTo(firstConst);
-              }
-            }}
-            style={{
-              padding: "5px 8px",
-              marginBottom: 6,
-              background: "rgba(167, 139, 250, 0.1)",
-              border: "1px solid rgba(167, 139, 250, 0.4)",
-              borderRadius: 4,
-              cursor: "pointer",
-              fontSize: 9,
-              color: "#A78BFA",
-              letterSpacing: 0.5,
-              textAlign: "center",
-            }}
-          >
-            ⭐ STARLINK CLUSTER ({satellites.filter((s) => s.category === "constellation").length}){" "}
-            {satellites.filter((s) => s.category === "constellation" && visibleSats[s.id]).length >
-            0
-              ? "ON"
-              : "OFF"}
-          </div>
+          (() => {
+            const constellationSats = satellites.filter((s) => s.category === "constellation");
+            const activeCount = constellationSats.filter((s) => visibleSats[s.id]).length;
+            const active = activeCount > 0;
+            return (
+              <div
+                onClick={() => {
+                  const constellationIds = constellationSats.map((s) => s.id);
+                  const allOn = constellationIds.every((id) => visibleSats[id]);
+                  for (const id of constellationIds) {
+                    if (allOn) {
+                      if (visibleSats[id]) toggleSatellite(id);
+                    } else {
+                      if (!visibleSats[id]) toggleSatellite(id);
+                    }
+                  }
+                  if (!allOn && constellationIds.length > 0) {
+                    const v = (window as unknown as { __viewer?: Cesium.Viewer }).__viewer;
+                    if (v && !v.isDestroyed()) {
+                      v.camera.flyTo({
+                        destination: Cesium.Cartesian3.fromDegrees(0, 0, 15_000_000),
+                        orientation: {
+                          heading: 0,
+                          pitch: Cesium.Math.toRadians(-90),
+                          roll: 0,
+                        },
+                        duration: 1.5,
+                      });
+                    }
+                  }
+                }}
+                style={{
+                  padding: "6px 8px",
+                  marginBottom: 3,
+                  background: active
+                    ? "rgba(0, 212, 255, 0.12)"
+                    : "rgba(0, 212, 255, 0.03)",
+                  border: active
+                    ? "1px solid rgba(0, 212, 255, 0.6)"
+                    : "1px solid rgba(0, 212, 255, 0.2)",
+                  borderRadius: 4,
+                  cursor: "pointer",
+                  transition: "background 0.15s, border-color 0.15s",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: 10,
+                    color: active ? "#00D4FF" : "#5ab3d4",
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  <span style={{ fontSize: 12 }}>
+                    {active ? "◉" : "○"}
+                  </span>
+                  <span style={{ fontSize: 12 }}>⭐</span>
+                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    STARLINK CLUSTER
+                  </span>
+                </div>
+                <div
+                  style={{
+                    fontSize: 8,
+                    color: "#5ab3d4",
+                    marginTop: 3,
+                    opacity: 0.7,
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  {constellationSats.length} SATELLITES{active ? ` · ${activeCount} ACTIVE` : ""}
+                </div>
+              </div>
+            );
+          })()
         )}
 
         <div

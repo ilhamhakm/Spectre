@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type * as Cesium from "cesium";
 import { useGlobeStore } from "@/store/globe-store";
 import { buildArcPositions } from "@/globe/arc";
+import { getAirplaneModelUri } from "@/globe/textures/airplane-model";
 
 // Trajectory overlay for a selected flight. When a flight billboard is
 // clicked (selectedFlightId set in the store), this component:
@@ -26,6 +27,14 @@ interface TrajectoryPoint {
   alt: number | null;
 }
 
+interface AirportInfo {
+  icao: string;
+  name: string;
+  city: string;
+  lat: number;
+  lon: number;
+}
+
 interface TrajectoryResponse {
   icao24?: string;
   hex?: string;
@@ -33,6 +42,8 @@ interface TrajectoryResponse {
   trajectory: TrajectoryPoint[];
   origin: string | TrajectoryPoint | null;
   destination: string | TrajectoryPoint | null;
+  originAirport?: AirportInfo | null;
+  destinationAirport?: AirportInfo | null;
   firstSeen?: number | null;
   lastSeen?: number | null;
   heading?: number | null;
@@ -60,6 +71,26 @@ function formatCoord(p: TrajectoryPoint): string {
   return `${p.lat.toFixed(3)}°, ${p.lon.toFixed(3)}°`;
 }
 
+// Format an airport label as "City · Airport Name (ICAO)" — fall back to
+// just the ICAO code if we don't have airport info resolved.
+function formatAirportLabel(
+  code: string | null,
+  airport: AirportInfo | null | undefined,
+): { primary: string; secondary: string | null } {
+  if (!airport) {
+    return { primary: code ?? "Unknown", secondary: null };
+  }
+  // Prefer city when available, else airport name; always show ICAO.
+  const place = airport.city && airport.city.trim() ? airport.city : airport.name;
+  if (place && place !== airport.icao) {
+    return {
+      primary: place,
+      secondary: `${airport.name} · ${airport.icao}`,
+    };
+  }
+  return { primary: airport.icao, secondary: airport.name };
+}
+
 export default function FlightTrajectoryOverlay() {
   const selectedFlightId = useGlobeStore((s) => s.selectedFlightId);
   const selectedKind = useGlobeStore((s) => s.selectedKind);
@@ -73,6 +104,9 @@ export default function FlightTrajectoryOverlay() {
   // Track the entities we add to the viewer so we can remove them on cleanup.
   const trajectoryEntityRef = useRef<Cesium.Entity | null>(null);
   const arcEntityRef = useRef<Cesium.Entity | null>(null);
+  // 3D plane model entity — replaces the 2D billboard when a flight is
+  // selected so the user sees a real 3D aircraft at the trajectory's end.
+  const modelEntityRef = useRef<Cesium.Entity | null>(null);
   // Track the AbortController so we can cancel an in-flight fetch when the
   // selection changes mid-request.
   const abortRef = useRef<AbortController | null>(null);
@@ -90,6 +124,10 @@ export default function FlightTrajectoryOverlay() {
     if (arcEntityRef.current && w && !w.isDestroyed()) {
       w.entities.remove(arcEntityRef.current);
       arcEntityRef.current = null;
+    }
+    if (modelEntityRef.current && w && !w.isDestroyed()) {
+      w.entities.remove(modelEntityRef.current);
+      modelEntityRef.current = null;
     }
     if (w && !w.isDestroyed()) w.scene.requestRender();
     abortRef.current?.abort();
@@ -118,7 +156,7 @@ export default function FlightTrajectoryOverlay() {
         ? (window as unknown as { __viewer?: Cesium.Viewer }).__viewer
         : undefined;
       if (!viewer || viewer.isDestroyed()) return;
-      // Clean up any prior entities (past track + arc).
+      // Clean up any prior entities (past track + arc + 3D model).
       if (trajectoryEntityRef.current) {
         viewer.entities.remove(trajectoryEntityRef.current);
         trajectoryEntityRef.current = null;
@@ -127,6 +165,10 @@ export default function FlightTrajectoryOverlay() {
         viewer.entities.remove(arcEntityRef.current);
         arcEntityRef.current = null;
       }
+      if (modelEntityRef.current) {
+        viewer.entities.remove(modelEntityRef.current);
+        modelEntityRef.current = null;
+      }
 
       const CesiumMod = (window as unknown as { __Cesium?: typeof Cesium }).__Cesium;
       if (!CesiumMod) return;
@@ -134,6 +176,9 @@ export default function FlightTrajectoryOverlay() {
       const rgba = kind === "flight-mil" ? MILITARY_COLOR : PRIVATE_COLOR;
       const glowColor = CesiumMod.Color.fromBytes(rgba[0], rgba[1], rgba[2], rgba[3]);
       const trackColor = CesiumMod.Color.fromBytes(rgba[0], rgba[1], rgba[2], 160);
+      // Model tint: full-opacity version of the same color (private = white,
+      // military = red-orange).
+      const modelColor = CesiumMod.Color.fromBytes(rgba[0], rgba[1], rgba[2], 255);
 
       const traj = json.trajectory ?? [];
 
@@ -196,6 +241,70 @@ export default function FlightTrajectoryOverlay() {
         arcEntityRef.current = arcEntity;
       }
 
+      // 3. 3D airplane model at the trajectory's last waypoint (the plane's
+      //    current or landed position). Oriented by heading so it points in
+      //    the direction of travel. Replaces the 2D billboard for the
+      //    selected flight so the user gets a real 3D aircraft on the globe.
+      if (traj.length >= 1) {
+        const last = traj[traj.length - 1];
+        const modelPos = CesiumMod.Cartesian3.fromDegrees(
+          last.lon,
+          last.lat,
+          typeof last.alt === "number" && last.alt > 0 ? last.alt : 120,
+        );
+        // Heading: use json.heading when available, else derive from the
+        // last two waypoints. Cesium's Transforms.headingPitchRollToFixedFrame
+        // expects heading in radians, clockwise from north.
+        let headingDeg = typeof json.heading === "number" ? json.heading : 0;
+        if (!headingDeg && traj.length >= 2) {
+          const prev = traj[traj.length - 2];
+          headingDeg = Math.atan2(
+            last.lon - prev.lon,
+            last.lat - prev.lat,
+          ) * 180 / Math.PI;
+        }
+        const hpr = new CesiumMod.HeadingPitchRoll(
+          CesiumMod.Math.toRadians(headingDeg),
+          0,
+          0,
+        );
+        const modelMatrix = CesiumMod.Transforms.headingPitchRollToFixedFrame(
+          modelPos,
+          hpr,
+          CesiumMod.Ellipsoid.WGS84,
+          CesiumMod.Transforms.localFrameToFixedFrameGenerator("north", "west"),
+        );
+        // Scale the model up so it's visible from the camera distance. The
+        // glTF model is in meters (~40m long), so scale=10 makes it ~400m.
+        // That's comically big for a real plane, but at the camera viewing
+        // distance (5km+ altitude) a real-sized plane would be invisible.
+        // We pick a scale that's visible but not absurd.
+        const cameraHeight = viewer.camera.positionCartographic.height;
+        const modelScale = cameraHeight > 500_000 ? 30
+                         : cameraHeight > 100_000 ? 15
+                         : cameraHeight > 20_000 ? 8
+                         : 4;
+        const modelEntity = viewer.entities.add({
+          id: `plane3d_${kind}_${selectedFlightId}`,
+          position: modelPos,
+          orientation: CesiumMod.Quaternion.fromHeadingPitchRoll(hpr),
+          model: {
+            uri: getAirplaneModelUri(),
+            scale: modelScale,
+            color: modelColor,
+            colorBlendMode: CesiumMod.ColorBlendMode.MIX,
+            colorBlendAmount: 0.7,
+            minimumPixelSize: 32,
+            maximumScale: 500,
+            show: true,
+          },
+        });
+        // Override the model matrix to apply our scale (Entity model scale
+        // only applies when no modelMatrix; using both is fine, scale stacks).
+        (modelEntity as unknown as { modelMatrix?: Cesium.Matrix4 }).modelMatrix = modelMatrix;
+        modelEntityRef.current = modelEntity;
+      }
+
       viewer.scene.requestRender();
     };
 
@@ -238,6 +347,10 @@ export default function FlightTrajectoryOverlay() {
         viewer.entities.remove(arcEntityRef.current);
         arcEntityRef.current = null;
       }
+      if (modelEntityRef.current && viewer && !viewer.isDestroyed()) {
+        viewer.entities.remove(modelEntityRef.current);
+        modelEntityRef.current = null;
+      }
       if (viewer && !viewer.isDestroyed()) viewer.scene.requestRender();
     };
   }, [selectedFlightId, selectedKind]);
@@ -262,15 +375,18 @@ export default function FlightTrajectoryOverlay() {
         left,
         top,
         width: 360,
-        background: "transparent",
-        border: `1px solid ${accent}33`,
+        // Solid background so the trajectory text stays legible against the
+        // globe imagery. Transparent + blur was unreadable.
+        background: selectedKind === "flight-mil"
+          ? "rgba(22, 8, 6, 0.97)"
+          : "rgba(20, 16, 6, 0.97)",
+        border: `1px solid ${accent}66`,
         borderRadius: 8,
         padding: 10,
         zIndex: 1001,
         pointerEvents: "auto",
         fontFamily: "monospace",
-        backdropFilter: "blur(8px)",
-        boxShadow: "0 8px 24px rgba(0, 0, 0, 0.8)",
+        boxShadow: "0 8px 24px rgba(0, 0, 0, 0.95)",
       }}
     >
       {/* Header row */}
@@ -345,14 +461,22 @@ export default function FlightTrajectoryOverlay() {
                 ORIGIN
               </div>
               {typeof data.origin === "string" ? (
-                <>
-                  <div style={{ fontSize: 12, color: accent, fontWeight: 700 }}>
-                    {data.origin}
-                  </div>
-                  <div style={{ fontSize: 8, color: "#666" }}>
-                    {data.firstSeen ? formatTime(data.firstSeen) : ""}
-                  </div>
-                </>
+                (() => {
+                  const lbl = formatAirportLabel(data.origin, data.originAirport);
+                  return (
+                    <>
+                      <div style={{ fontSize: 12, color: accent, fontWeight: 700 }}>
+                        {lbl.primary}
+                      </div>
+                      {lbl.secondary && (
+                        <div style={{ fontSize: 8, color: "#888" }}>{lbl.secondary}</div>
+                      )}
+                      <div style={{ fontSize: 8, color: "#666" }}>
+                        {data.firstSeen ? formatTime(data.firstSeen) : ""}
+                      </div>
+                    </>
+                  );
+                })()
               ) : data.origin ? (
                 <>
                   <div style={{ fontSize: 11, color: accent, fontWeight: 700 }}>
@@ -380,14 +504,22 @@ export default function FlightTrajectoryOverlay() {
                 DESTINATION
               </div>
               {typeof data.destination === "string" ? (
-                <>
-                  <div style={{ fontSize: 12, color: accent, fontWeight: 700 }}>
-                    {data.destination}
-                  </div>
-                  <div style={{ fontSize: 8, color: "#666" }}>
-                    {data.lastSeen ? formatTime(data.lastSeen) : ""}
-                  </div>
-                </>
+                (() => {
+                  const lbl = formatAirportLabel(data.destination, data.destinationAirport);
+                  return (
+                    <>
+                      <div style={{ fontSize: 12, color: accent, fontWeight: 700 }}>
+                        {lbl.primary}
+                      </div>
+                      {lbl.secondary && (
+                        <div style={{ fontSize: 8, color: "#888" }}>{lbl.secondary}</div>
+                      )}
+                      <div style={{ fontSize: 8, color: "#666" }}>
+                        {data.lastSeen ? formatTime(data.lastSeen) : ""}
+                      </div>
+                    </>
+                  );
+                })()
               ) : (
                 <div style={{ fontSize: 10, color: "#5a606c", fontStyle: "italic" }}>
                   Unknown

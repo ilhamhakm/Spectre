@@ -44,6 +44,7 @@ interface OpenSkyTrackResponse {
 interface AirportCoordRef {
   icao: string;
   name: string;
+  city: string;
   lat: number;
   lon: number;
 }
@@ -54,6 +55,10 @@ interface TrajectoryResponse {
   trajectory: { time: number; lat: number; lon: number; alt: number | null }[];
   origin: string | null;
   destination: string | null;
+  // Resolved airport info (city + airport name) so the client can render a
+  // friendly label like "Los Angeles · LAX" instead of just "KLAX".
+  originAirport: AirportCoordRef | null;
+  destinationAirport: AirportCoordRef | null;
   firstSeen: number | null;
   lastSeen: number | null;
   live: boolean;
@@ -199,6 +204,8 @@ export async function GET(request: Request) {
     trajectory,
     origin,
     destination,
+    originAirport: null,
+    destinationAirport: null,
     firstSeen,
     lastSeen,
     live,
@@ -209,6 +216,21 @@ export async function GET(request: Request) {
     fetchedAt: Date.now(),
   };
 
+  // Resolve airport details (name + city) for origin and destination so the
+  // client can show "City · AIRPORT_NAME (ICAO)" instead of just the code.
+  if (origin) {
+    const ap = await getAirportCoords(origin);
+    if (ap) {
+      body.originAirport = { icao: ap.icao, name: ap.name, city: ap.city, lat: ap.lat, lon: ap.lon };
+    }
+  }
+  if (destination) {
+    const ap = await getAirportCoords(destination);
+    if (ap) {
+      body.destinationAirport = { icao: ap.icao, name: ap.name, city: ap.city, lat: ap.lat, lon: ap.lon };
+    }
+  }
+
   // Grounded + no retained trajectory: resolve the airports' coordinates so
   // the client can anchor the landed marker and draw the origin→destination
   // parabolic flight path. Resolved once and cached in process memory.
@@ -216,17 +238,18 @@ export async function GET(request: Request) {
     if (trajectory.length === 0 && destination) {
       const ap = await getAirportCoords(destination);
       if (ap) {
-        body.landedAirport = { icao: ap.icao, name: ap.name, lat: ap.lat, lon: ap.lon };
+        body.landedAirport = { icao: ap.icao, name: ap.name, city: ap.city, lat: ap.lat, lon: ap.lon };
       }
     }
     // Origin is needed regardless for the parabolic arc's start point, and
     // doubles as a last-resort marker anchor when no destination exists.
-    if (origin) {
+    if (origin && !body.landedOriginAirport) {
       const ap = await getAirportCoords(origin);
       if (ap) {
         body.landedOriginAirport = {
           icao: ap.icao,
           name: ap.name,
+          city: ap.city,
           lat: ap.lat,
           lon: ap.lon,
         };

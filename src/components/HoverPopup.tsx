@@ -718,6 +718,31 @@ export default function HoverPopup({ cctvCamera, events, privateFlight, privateF
   const left = Math.min(x + 14, window.innerWidth - 360);
   const top = Math.min(y + 14, window.innerHeight - 320);
 
+  // Pick the popup background based on what's hovered. Hover content like
+  // private/military flight info needs a SOLID background so the text stays
+  // legible against the globe imagery behind it. The transparent + blur
+  // style was making text unreadable.
+  function bgFor(): string {
+    if (privateFlight) return "rgba(20, 16, 6, 0.96)";    // dark gold tint
+    if (militaryFlight) return "rgba(22, 8, 6, 0.96)";     // dark red tint
+    if (satellite) return "rgba(6, 14, 20, 0.96)";         // dark cyan tint
+    if (region) return "rgba(8, 12, 18, 0.96)";            // dark blue
+    if (building) return "rgba(20, 14, 4, 0.96)";          // dark yellow
+    if (hasEvents) return "rgba(18, 6, 6, 0.96)";          // dark red
+    if (cctvCamera) return "rgba(6, 14, 20, 0.96)";        // dark cyan
+    return "rgba(8, 10, 14, 0.96)";                        // near-black
+  }
+  function borderFor(): string {
+    if (privateFlight) return "1px solid rgba(255, 215, 0, 0.4)";
+    if (militaryFlight) return "1px solid rgba(255, 85, 51, 0.4)";
+    if (satellite) return "1px solid rgba(0, 212, 255, 0.4)";
+    if (region) return "1px solid rgba(0, 212, 255, 0.3)";
+    if (building) return "1px solid rgba(255, 200, 42, 0.3)";
+    if (hasEvents) return "1px solid rgba(255, 77, 77, 0.3)";
+    if (cctvCamera) return "1px solid rgba(0, 212, 255, 0.3)";
+    return "1px solid #1a1a1a";
+  }
+
   return (
     <div
       style={{
@@ -727,15 +752,14 @@ export default function HoverPopup({ cctvCamera, events, privateFlight, privateF
         width: 340,
         maxHeight: window.innerHeight - top - 20,
         overflowY: "auto",
-        background: "transparent",
-        border: "1px solid #1a1a1a",
+        background: bgFor(),
+        border: borderFor(),
         borderRadius: 8,
         padding: 10,
         zIndex: 1000,
         pointerEvents: "auto",
         fontFamily: "monospace",
-        backdropFilter: "blur(8px)",
-        boxShadow: "0 8px 24px rgba(0, 0, 0, 0.8)",
+        boxShadow: "0 8px 24px rgba(0, 0, 0, 0.95)",
       }}
     >
       {hasEvents && <EventPopup events={events!} />}
