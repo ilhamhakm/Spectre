@@ -1223,12 +1223,12 @@ export default function CityBookmarks({ visible = true }: Props) {
 
   function hoverOn(e: React.MouseEvent<HTMLElement>) {
     e.currentTarget.style.background = "rgba(0, 212, 255, 0.08)";
-    e.currentTarget.style.borderColor = "rgba(0, 212, 255, 0.4)";
+    e.currentTarget.style.borderColor = "rgba(0, 212, 255, 0.2)";
     e.currentTarget.style.color = "#00D4FF";
   }
   function hoverOff(e: React.MouseEvent<HTMLElement>, isActive: boolean) {
     if (isActive) return;
-    e.currentTarget.style.background = "rgba(8, 14, 22, 0.55)";
+    e.currentTarget.style.background = "rgba(0, 212, 255, 0.03)";
     e.currentTarget.style.borderColor = "rgba(0, 212, 255, 0.15)";
     e.currentTarget.style.color = "#5ab3d4";
   }
@@ -1290,8 +1290,8 @@ export default function CityBookmarks({ visible = true }: Props) {
                   style={{
                     width: "100%",
                     padding: "5px 8px",
-                    background: "rgba(8, 14, 22, 0.55)",
-                    border: "1px solid rgba(0, 212, 255, 0.4)",
+                    background: "rgba(0, 212, 255, 0.03)",
+                    border: "1px solid rgba(0, 212, 255, 0.2)",
                     color: "#7ac4e0",
                     fontSize: 9,
                     fontFamily: "inherit",
@@ -1306,7 +1306,7 @@ export default function CityBookmarks({ visible = true }: Props) {
                     e.currentTarget.style.color = "#00D4FF";
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "rgba(8, 14, 22, 0.55)";
+                    e.currentTarget.style.background = "rgba(0, 212, 255, 0.03)";
                     e.currentTarget.style.color = "#7ac4e0";
                   }}
                 >
@@ -1380,8 +1380,8 @@ export default function CityBookmarks({ visible = true }: Props) {
                   style={{
                     width: "100%",
                     padding: "5px 8px",
-                    background: "rgba(8, 14, 22, 0.55)",
-                    border: "1px solid rgba(0, 212, 255, 0.4)",
+                    background: "rgba(0, 212, 255, 0.03)",
+                    border: "1px solid rgba(0, 212, 255, 0.2)",
                     color: "#7ac4e0",
                     fontSize: 9,
                     fontFamily: "inherit",
@@ -1396,7 +1396,7 @@ export default function CityBookmarks({ visible = true }: Props) {
                     e.currentTarget.style.color = "#00D4FF";
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "rgba(8, 14, 22, 0.55)";
+                    e.currentTarget.style.background = "rgba(0, 212, 255, 0.03)";
                     e.currentTarget.style.color = "#7ac4e0";
                   }}
                 >

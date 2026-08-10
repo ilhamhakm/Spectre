@@ -308,10 +308,10 @@ export default function TacticalHUD({ visible = true }: Props) {
               style={{
                 width: "100%",
                 padding: "8px 10px",
-                background: "rgba(8, 14, 22, 0.55)",
+                background: "rgba(0, 212, 255, 0.03)",
                 backdropFilter: "blur(6px)",
                 WebkitBackdropFilter: "blur(6px)",
-                border: "1px solid rgba(0, 212, 255, 0.5)",
+                border: "1px solid rgba(0, 212, 255, 0.3)",
                 color: "#00D4FF",
                 fontSize: 10,
                 fontFamily: "inherit",
@@ -380,12 +380,12 @@ export default function TacticalHUD({ visible = true }: Props) {
                           minHeight: 24,
                           background: active
                             ? "rgba(0, 212, 255, 0.12)"
-                            : "rgba(8, 14, 22, 0.55)",
+                            : "rgba(0, 212, 255, 0.03)",
                           backdropFilter: "blur(6px)",
                           WebkitBackdropFilter: "blur(6px)",
                           border: active
                             ? "1px solid rgba(0, 212, 255, 0.6)"
-                            : "1px solid rgba(0, 212, 255, 0.4)",
+                            : "1px solid rgba(0, 212, 255, 0.2)",
                           color: active ? "#00D4FF" : "#5ab3d4",
                           fontSize: 10,
                           fontFamily: "inherit",
@@ -446,12 +446,12 @@ export default function TacticalHUD({ visible = true }: Props) {
             padding: "8px 10px",
             background: savedFlash
               ? "rgba(0, 212, 255, 0.12)"
-              : "rgba(8, 14, 22, 0.55)",
+              : "rgba(0, 212, 255, 0.03)",
             backdropFilter: "blur(6px)",
             WebkitBackdropFilter: "blur(6px)",
             border: savedFlash
               ? "1px solid rgba(0, 212, 255, 0.6)"
-              : "1px solid rgba(0, 212, 255, 0.5)",
+              : "1px solid rgba(0, 212, 255, 0.3)",
             color: "#00D4FF",
             fontSize: 10,
             fontFamily: "JetBrains Mono, monospace",
@@ -472,10 +472,10 @@ export default function TacticalHUD({ visible = true }: Props) {
           style={{
             width: "100%",
             padding: "8px 10px",
-            background: "rgba(8, 14, 22, 0.55)",
+            background: "rgba(0, 212, 255, 0.03)",
             backdropFilter: "blur(6px)",
             WebkitBackdropFilter: "blur(6px)",
-            border: "1px solid rgba(0, 212, 255, 0.5)",
+            border: "1px solid rgba(0, 212, 255, 0.3)",
             color: "#00D4FF",
             fontSize: 10,
             fontFamily: "JetBrains Mono, monospace",
@@ -490,8 +490,8 @@ export default function TacticalHUD({ visible = true }: Props) {
             e.currentTarget.style.borderColor = "rgba(0, 212, 255, 0.6)";
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.background = "rgba(8, 14, 22, 0.55)";
-            e.currentTarget.style.borderColor = "rgba(0, 212, 255, 0.5)";
+            e.currentTarget.style.background = "rgba(0, 212, 255, 0.03)";
+            e.currentTarget.style.borderColor = "rgba(0, 212, 255, 0.3)";
           }}
         >
           {isFullscreen ? "⊠" : "⛶"}
@@ -512,12 +512,12 @@ export default function TacticalHUD({ visible = true }: Props) {
             padding: "8px 10px",
             background: googleTilesEnabled
               ? "rgba(0, 212, 255, 0.12)"
-              : "rgba(8, 14, 22, 0.55)",
+              : "rgba(0, 212, 255, 0.03)",
             backdropFilter: "blur(6px)",
             WebkitBackdropFilter: "blur(6px)",
             border: googleTilesEnabled
               ? "1px solid rgba(0, 212, 255, 0.6)"
-              : "1px solid rgba(0, 212, 255, 0.5)",
+              : "1px solid rgba(0, 212, 255, 0.3)",
             color: googleTilesEnabled ? "#00D4FF" : "#5ab3d4",
             fontSize: 10,
             fontFamily: "JetBrains Mono, monospace",
@@ -534,10 +534,10 @@ export default function TacticalHUD({ visible = true }: Props) {
           onMouseLeave={(e) => {
             e.currentTarget.style.background = googleTilesEnabled
               ? "rgba(0, 212, 255, 0.12)"
-              : "rgba(8, 14, 22, 0.55)";
+              : "rgba(0, 212, 255, 0.03)";
             e.currentTarget.style.borderColor = googleTilesEnabled
               ? "rgba(0, 212, 255, 0.6)"
-              : "rgba(0, 212, 255, 0.5)";
+              : "rgba(0, 212, 255, 0.3)";
           }}
         >
           ⬡
@@ -554,12 +554,12 @@ export default function TacticalHUD({ visible = true }: Props) {
             padding: "8px 10px",
             background: layerVisibility.borders
               ? "rgba(0, 212, 255, 0.12)"
-              : "rgba(8, 14, 22, 0.55)",
+              : "rgba(0, 212, 255, 0.03)",
             backdropFilter: "blur(6px)",
             WebkitBackdropFilter: "blur(6px)",
             border: layerVisibility.borders
               ? "1px solid rgba(0, 212, 255, 0.6)"
-              : "1px solid rgba(0, 212, 255, 0.5)",
+              : "1px solid rgba(0, 212, 255, 0.3)",
             color: layerVisibility.borders ? "#00D4FF" : "#5ab3d4",
             fontSize: 10,
             fontFamily: "JetBrains Mono, monospace",
@@ -576,10 +576,10 @@ export default function TacticalHUD({ visible = true }: Props) {
           onMouseLeave={(e) => {
             e.currentTarget.style.background = layerVisibility.borders
               ? "rgba(0, 212, 255, 0.12)"
-              : "rgba(8, 14, 22, 0.55)";
+              : "rgba(0, 212, 255, 0.03)";
             e.currentTarget.style.borderColor = layerVisibility.borders
               ? "rgba(0, 212, 255, 0.6)"
-              : "rgba(0, 212, 255, 0.5)";
+              : "rgba(0, 212, 255, 0.3)";
           }}
         >
           ◇
@@ -612,7 +612,7 @@ export default function TacticalHUD({ visible = true }: Props) {
             style={{
               width: 420,
               background: "transparent",
-              border: "1px solid rgba(0, 212, 255, 0.4)",
+              border: "1px solid rgba(0, 212, 255, 0.2)",
               borderRadius: 8,
               fontFamily: "JetBrains Mono, monospace",
             }}
@@ -629,7 +629,7 @@ export default function TacticalHUD({ visible = true }: Props) {
                 padding: "12px 14px",
                 background: "transparent",
                 border: "none",
-                borderBottom: "1px solid rgba(0, 212, 255, 0.5)",
+                borderBottom: "1px solid rgba(0, 212, 255, 0.3)",
                 color: "#00D4FF",
                 fontSize: 13,
                 fontFamily: "inherit",

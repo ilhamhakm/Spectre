@@ -3,9 +3,14 @@
 import { useEffect, useState } from "react";
 import { useGlobeStore } from "@/store/globe-store";
 
-// Circular view mask — renders a glass overlay with a circular cutout.
-// Inside the circle: globe is clear (no overlay). Outside the circle:
-// blurred glass (same as side panels — transparent + backdrop-filter blur).
+// Circular view mask with radial blur and gray tint.
+//
+// Inside the center circle: globe is completely clear (no overlay).
+// Transition band: smooth falloff from clear to blurry.
+// Outside the circle (where panels/buttons sit): increasingly blurry
+// backdrop with a subtle gray tint that provides luminance contrast
+// for the transparent cyan panels. The tint is transparent at the
+// transition and deepens to a light gray toward the screen edges.
 //
 // The circle is centered at the page center. Its diameter = the gap between
 // the left and right panel inner edges, so the circle spans the full width
@@ -58,9 +63,9 @@ export default function CircleMask() {
   // globe visible). Outside the circle the mask is opaque (overlay shown,
   // blurred glass effect). The edge is a wide, sine-eased falloff (no hard
   // ring, no visible boundary) so the blur circle dissolves into the glass.
-  // A generous band (~80px) is what makes the transition truly invisible —
-  // narrow bands show a seam even when stepped.
-  const BAND = 80;
+  // A generous band (~120px) makes the transition truly invisible and gives
+  // a gradual ramp from clear to fully blurry.
+  const BAND = 120;
   const inner = Math.max(0, radius - BAND);
   const maskGradient =
     `radial-gradient(circle ${radius + 2}px at ${centerX}px ${centerY}px,` +
@@ -76,16 +81,34 @@ export default function CircleMask() {
     ` rgba(0,0,0,0.85) ${inner + BAND * 0.91}px,` +
     ` black ${radius}px)`;
 
+  // Gray tint gradient: transparent in the center (globe untouched),
+  // gradually increasing to a subtle dark gray at the screen edges. This
+  // provides luminance contrast for the transparent cyan panels without
+  // putting a gray background on the buttons themselves. The tint follows
+  // the same radial falloff as the mask so it only appears where the blur
+  // appears.
+  const tintGradient =
+    `radial-gradient(circle ${radius + BAND}px at ${centerX}px ${centerY}px,` +
+    ` transparent ${inner}px,` +
+    ` rgba(10, 16, 24, 0.0) ${inner + BAND * 0.3}px,` +
+    ` rgba(10, 16, 24, 0.05) ${inner + BAND * 0.5}px,` +
+    ` rgba(10, 16, 24, 0.12) ${inner + BAND * 0.7}px,` +
+    ` rgba(10, 16, 24, 0.2) ${inner + BAND * 0.85}px,` +
+    ` rgba(10, 16, 24, 0.28) ${radius}px,` +
+    ` rgba(10, 16, 24, 0.35) ${radius + BAND * 0.5}px,` +
+    ` rgba(10, 16, 24, 0.4) ${radius + BAND}px)`;
+
   return (
     <div
       style={{
         position: "absolute",
         inset: 0,
-        // Transparent background — only the backdrop blur shows, matching
-        // the side panels exactly. NOT a dark fill.
-        background: "transparent",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
+        // Radial gray tint: transparent center, subtle gray at edges.
+        // Combined with the backdrop blur and mask, this creates the
+        // transition from clear globe to blurry grayish panel zone.
+        background: tintGradient,
+        backdropFilter: "blur(14px)",
+        WebkitBackdropFilter: "blur(14px)",
         maskImage: maskGradient,
         WebkitMaskImage: maskGradient,
         pointerEvents: "none",

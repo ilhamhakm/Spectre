@@ -188,8 +188,8 @@ export default function InstabilityPanel() {
             onClick={() => toggleLayer("events")}
             style={{
               padding: "6px 8px",
-              background: "rgba(8, 14, 22, 0.55)",
-              border: "1px solid rgba(0, 212, 255, 0.5)",
+              background: "rgba(0, 212, 255, 0.03)",
+              border: "1px solid rgba(0, 212, 255, 0.3)",
               color: "#5ab3d4",
               fontSize: 10,
               fontFamily: "inherit",
@@ -247,8 +247,8 @@ export default function InstabilityPanel() {
                     width: "100%",
                     padding: "8px 10px",
                     marginBottom: 4,
-                    background: "rgba(8, 14, 22, 0.55)",
-                    border: "1px solid rgba(0, 212, 255, 0.4)",
+                    background: "rgba(0, 212, 255, 0.03)",
+                    border: "1px solid rgba(0, 212, 255, 0.2)",
                     color: "#9fe9ff",
                     fontSize: 10,
                     fontFamily: "inherit",
