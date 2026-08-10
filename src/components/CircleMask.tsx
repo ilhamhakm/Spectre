@@ -3,14 +3,14 @@
 import { useEffect, useState } from "react";
 import { useGlobeStore } from "@/store/globe-store";
 
-// Circular view mask with radial blur and gray tint.
+// Circular view mask with three-zone radial overlay:
+//   Zone 1 (center to inner): clear globe, no blur, no tint
+//   Zone 2 (inner to radius): blur ramps in, no tint (transparent blurry)
+//   Zone 3 (radius outward): full blur, subtle gray tint (grayish blurry)
 //
-// Inside the center circle: globe is completely clear (no overlay).
-// Transition band: smooth falloff from clear to blurry.
-// Outside the circle (where panels/buttons sit): increasingly blurry
-// backdrop with a subtle gray tint that provides luminance contrast
-// for the transparent cyan panels. The tint is transparent at the
-// transition and deepens to a light gray toward the screen edges.
+// The blur transition and the gray tint are staged: blur reaches full
+// strength at `radius`, THEN the tint begins ramping in. This gives the
+// progression: clear -> transparent blurry -> grayish blurry.
 //
 // The circle is centered at the page center. Its diameter = the gap between
 // the left and right panel inner edges, so the circle spans the full width
@@ -59,14 +59,20 @@ export default function CircleMask() {
   const centerX = (gapLeft + gapRight) / 2;
   const centerY = viewport.h / 2;
 
-  // CSS mask: inside the circle the mask is transparent (overlay hidden,
-  // globe visible). Outside the circle the mask is opaque (overlay shown,
-  // blurred glass effect). The edge is a wide, sine-eased falloff (no hard
-  // ring, no visible boundary) so the blur circle dissolves into the glass.
-  // A generous band (~120px) makes the transition truly invisible and gives
-  // a gradual ramp from clear to fully blurry.
+  // Three-zone radial overlay:
+  //   Zone 1 (center to inner): clear globe, no blur, no tint
+  //   Zone 2 (inner to radius): blur ramps in, no tint (transparent blurry)
+  //   Zone 3 (radius outward): full blur, gray tint ramps in (grayish blurry)
+  //
+  // The mask controls WHERE backdrop blur is visible (transparent inside =
+  // globe clear, opaque outside = blur shows). The tint gradient starts
+  // AFTER the blur is fully established, so the transition band gets
+  // blur-only before the grayish tint appears at the panel zone.
   const BAND = 120;
   const inner = Math.max(0, radius - BAND);
+
+  // Mask: controls blur visibility. Transparent inside, opaque outside,
+  // smooth sine-eased falloff across BAND.
   const maskGradient =
     `radial-gradient(circle ${radius + 2}px at ${centerX}px ${centerY}px,` +
     ` transparent ${inner}px,` +
@@ -81,22 +87,19 @@ export default function CircleMask() {
     ` rgba(0,0,0,0.85) ${inner + BAND * 0.91}px,` +
     ` black ${radius}px)`;
 
-  // Gray tint gradient: transparent in the center (globe untouched),
-  // gradually increasing to a subtle dark gray at the screen edges. This
-  // provides luminance contrast for the transparent cyan panels without
-  // putting a gray background on the buttons themselves. The tint follows
-  // the same radial falloff as the mask so it only appears where the blur
-  // appears.
+  // Tint: starts at `radius` (AFTER blur is fully ramped in), then
+  // gradually adds a subtle gray tint outward into the panel zone.
+  // Transparent through Zone 1 and Zone 2, light gray in Zone 3.
+  const TINT_BAND = 500;
   const tintGradient =
-    `radial-gradient(circle ${radius + BAND}px at ${centerX}px ${centerY}px,` +
-    ` transparent ${inner}px,` +
-    ` rgba(10, 16, 24, 0.0) ${inner + BAND * 0.3}px,` +
-    ` rgba(10, 16, 24, 0.05) ${inner + BAND * 0.5}px,` +
-    ` rgba(10, 16, 24, 0.12) ${inner + BAND * 0.7}px,` +
-    ` rgba(10, 16, 24, 0.2) ${inner + BAND * 0.85}px,` +
-    ` rgba(10, 16, 24, 0.28) ${radius}px,` +
-    ` rgba(10, 16, 24, 0.35) ${radius + BAND * 0.5}px,` +
-    ` rgba(10, 16, 24, 0.4) ${radius + BAND}px)`;
+    `radial-gradient(circle ${radius + TINT_BAND}px at ${centerX}px ${centerY}px,` +
+    ` transparent ${radius}px,` +
+    ` rgba(15, 20, 28, 0.02) ${radius + TINT_BAND * 0.15}px,` +
+    ` rgba(15, 20, 28, 0.04) ${radius + TINT_BAND * 0.3}px,` +
+    ` rgba(15, 20, 28, 0.06) ${radius + TINT_BAND * 0.45}px,` +
+    ` rgba(15, 20, 28, 0.08) ${radius + TINT_BAND * 0.6}px,` +
+    ` rgba(15, 20, 28, 0.1) ${radius + TINT_BAND * 0.8}px,` +
+    ` rgba(15, 20, 28, 0.12) ${radius + TINT_BAND}px)`;
 
   return (
     <div
