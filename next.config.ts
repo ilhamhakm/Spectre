@@ -6,9 +6,6 @@ const nextConfig: NextConfig = {
       ...config.resolve.alias,
       "@zip.js/zip.js/lib/zip-no-worker.js": "@zip.js/zip.js",
     };
-    // Disable webpack file watcher polling on Windows and ignore
-    // .playwright-cli output directory — its screenshots/logs trigger
-    // an infinite Fast Refresh rebuild loop.
     config.watchOptions = {
       ignored: ["**/node_modules/**", "**/.playwright-cli/**", "**/.next/**", "**/out/**"],
       poll: false,

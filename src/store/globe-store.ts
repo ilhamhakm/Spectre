@@ -1,38 +1,12 @@
 "use client";
 
 import { create } from "zustand";
-import type { ProtestEvent } from "@/lib/types";
 import type { RegionHit } from "@/globe/region-index";
 import type { CctvCamera } from "@/lib/sources/cctv";
 
-// Format a Date as YYYY-MM-DD in LOCAL time (not UTC).
-// toISOString() converts to UTC which shifts the date backwards
-// in positive-UTC-offset timezones (e.g. UTC+7 Jakarta).
-function localDateStr(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-export type HoveredKind =
-  | "cctv"
-  | "event"
-  | "flight-private"
-  | "flight-mil"
-  | "building"
-  | "region"
-  | "satellite"
-  | null;
-
-export type SelectedKind =
-  | "flight-private"
-  | "flight-mil"
-  | null;
-
-export interface HoverPos {
-  x: number;
-  y: number;
+/** Format a Date as YYYY-MM-DD (UTC) for GIBS WMTS TIME parameter. */
+function toYMD(d: Date): string {
+  return d.toISOString().split("T")[0];
 }
 
 export interface SavedView {
@@ -43,228 +17,543 @@ export interface SavedView {
   pitch: number;
 }
 
-export interface GlobeState {
-  // Hover state — populated by globe/controls/hover.ts
-  hoveredCctvId: string | null;
-  hoveredEventId: string | null;
-  hoveredFlightId: string | null;
-  // Hovered building feature data (OSM Buildings 3D tiles) — name/height/
-  // type tags read straight off the picked Cesium3DTileFeature.
-  hoveredBuilding: {
-    name: string | null;
-    height: number | null;
-    building: string | null;
-    elementId: string | null;
-    addrStreet: string | null;
-    addrHouse: string | null;
-  } | null;
-  hoverPos: HoverPos | null;
-  hoveredKind: HoveredKind;
-  // Region under the cursor (country or state, chosen by camera height) —
-  // populated by globe/controls/hover.ts when the borders layer is visible.
-  hoveredRegion: RegionHit | null;
-  hoveredSatelliteId: string | null;
-
-  // Selection state — populated by globe/controls/click.ts. A click on a
-  // flight billboard selects it so FlightTrajectoryOverlay can fetch +
-  // render its trajectory. Cleared by clicking empty space or the popup's X.
-  selectedFlightId: string | null;
-  selectedKind: SelectedKind;
-  selectedAt: { x: number; y: number } | null;
-
-  // Panel open state — lifted from TacticalHUD (sidebarOpen) and
-  // CityBookmarks (panelOpen) so the CircleMask can compute its diameter
-  // without prop drilling. Both default to open.
-  leftPanelOpen: boolean;
-  rightPanelOpen: boolean;
-  replayPanelOpen: boolean;
-
-  // Active city (last flown-to from CityBookmarks)
-  activeCity: string | null;
-
-  // Saved camera views per city — persisted to localStorage
-  savedViews: Record<string, SavedView>;
-
-  // Layer visibility — keyed by layer id
-  layerVisibility: Record<string, boolean>;
-
-  // Which CCTV sources (providers) are enabled. Keyed by provider name.
-  cctvSources: Record<string, boolean>;
-
-  // Per-source camera count for the currently active city. Updated by the
-  // globe's CCTV filter whenever cameras are re-filtered. Used by the
-  // CityBookmarks source panel to sort by count and show a badge.
-  cctvSourceCounts: Record<string, number>;
-  cctvCatalogLoaded: boolean;
-  setCctvCatalogLoaded: (loaded: boolean) => void;
-  cctvCameras: CctvCamera[];
-  setCctvCameras: (cameras: CctvCamera[]) => void;
-
-  // Camera altitude in meters — updated on camera move. Used by InstabilityPanel
-  // to switch between country-level and state-level grouping.
-  cameraAltitude: number;
-  setCameraAltitude: (alt: number) => void;
-
-  // Layer loading state — true while a layer is fetching/rendering data
-  layerLoading: Record<string, boolean>;
-
-  // Latest civil-unrest events fetched by the globe's events layer (already
-  // bbox-filtered to the current viewport). The hover popup resolves hovered
-  // cluster ids against this same array so it never shows events the globe
-  // didn't render.
-  events: ProtestEvent[];
-
-  // Private-flight tracking: the callsign (tail number) the user has chosen
-  // to follow, e.g. "N628TS" for Elon Musk's Gulfstream. When set, the globe
-  // polls faster, highlights the jet in gold, auto-renders its trajectory,
-  // and accumulates a live position trail.
-  trackedTailCallsign: string | null;
-  trackedTailName: string | null;
-  // ICAO hex of the tracked jet (used for trajectory fetch + gold highlight
-  // resolution). Resolved by the private flights panel from the registry.
-  trackedTailIcao24: string | null;
-
-  // Which satellites are toggled visible on the globe (satelliteId → visible).
-  visibleSatellites: Record<string, boolean>;
-  toggleSatellite: (id: string) => void;
-
-  // When set to a satellite ID, CesiumGlobe shows its orbit trajectory then clears this.
-  requestedSatelliteTrajectory: string | null;
-  setRequestedSatelliteTrajectory: (id: string | null) => void;
-
-  // Google Photorealistic 3D Tiles — strictly opt-in. The tileset is only
-  // created (and API requests fired) when this flips to true.
-  googleTilesEnabled: boolean;
-
-  // Sentinel-2 satellite imagery replay. Shows historical Sentinel-2 captures
-  // with back/forward navigation. Two granularities:
-  //   - 'weekly': 7-day range (for tracking construction, specific changes)
-  //   - 'monthly': full month range (cloud-free mosaic, for big-picture views)
-  // Sentinel-2 revisit cycle is ~5 days, so weekly stepping captures meaningful
-  // changes. Visibility controlled by layerVisibility.sentinel.
-  sentinelDate: string | null; // ISO date string e.g. "2026-07-26"
-  sentinelGranularity: "weekly" | "monthly";
-  sentinelPlaying: boolean; // auto-play: advances 1 week every 2s when true
-  gibsDate: string | null; // ISO date string e.g. "2026-08-09"
-  gibsGranularity: "weekly" | "monthly";
-  gibsPlaying: boolean;
-  setSentinelDate: (date: string | null) => void;
-  stepSentinelDate: (direction: "back" | "forward", granularity?: "weekly" | "monthly") => void;
-  setSentinelGranularity: (g: "weekly" | "monthly") => void;
-  setSentinelPlaying: (playing: boolean) => void;
-  setGibsDate: (date: string | null) => void;
-  stepGibsDate: (direction: "back" | "forward", granularity?: "weekly" | "monthly") => void;
-  setGibsGranularity: (g: "weekly" | "monthly") => void;
-  setGibsPlaying: (playing: boolean) => void;
-
-  // Road class visibility — which road classes to render in the traffic layer.
-  // All off by default; toggled via the TrafficPanel right sidebar.
-  roadClassVisibility: Record<string, boolean>;
-  toggleRoadClass: (cls: string) => void;
-
-  // Actions
-  setHover: (
-    id: string | null,
-    x?: number,
-    y?: number,
-    kind?: HoveredKind,
-    building?: GlobeState["hoveredBuilding"],
-    region?: RegionHit | null
-  ) => void;
-  clearHover: () => void;
-  selectFlight: (
-    id: string | null,
-    kind: SelectedKind,
-    x?: number,
-    y?: number
-  ) => void;
-  setLeftPanelOpen: (open: boolean) => void;
-  setRightPanelOpen: (open: boolean) => void;
-  setReplayPanelOpen: (open: boolean) => void;
-  toggleLayer: (id: string) => void;
-  toggleCctvSource: (provider: string) => void;
-  setCctvSourceCounts: (counts: Record<string, number>) => void;
-  setLayerLoading: (id: string, loading: boolean) => void;
-  setEvents: (events: ProtestEvent[]) => void;
-  setActiveCity: (name: string | null) => void;
-  saveView: (city: string, view: SavedView) => void;
-
-  // Private-flight tracking
-  setTrackedTail: (
-    callsign: string | null,
-    name?: string | null,
-    icao24?: string | null
-  ) => void;
-
-  // Google 3D Tiles
-  setGoogleTilesEnabled: (enabled: boolean) => void;
+export interface CameraCoords {
+  lon: number;
+  lat: number;
+  height: number;
 }
 
-const SAVED_VIEWS_KEY = "spectre:savedViews";
-const ACTIVE_CITY_KEY = "spectre:activeCity";
+// Layer IDs for the left panel toggles
+export type LayerId =
+  | "commercial-flights"
+  | "private-flights"
+  | "military-flights"
+  | "satellites"
+  | "dams"
+  | "earthquakes"
+  | "data-centers"
+  | "civil-unrest"
+  | "traffic"
+  | "cctv"
+  | "3d-buildings"
+  | "radio"
+  | "big-changes-replay"
+  | "construction-replay";
+
+// Right panel mode: which layer's compliment is showing (null = default mode)
+export type ActiveRightPanel = LayerId | null;
+
+// Which kind of flight is selected (commercial / private / military).
+export type SelectedKind =
+  | "flight-commercial"
+  | "flight-private"
+  | "flight-mil"
+  | null;
+
+// Tracked static feature (dam / earthquake / data center). Tracking is a
+// one-shot fly-to + right-panel info display (no continuous camera follow,
+// unlike flight/satellite tracking). Mirrors the trackedSatellite* pattern.
+export type TrackedFeatureKind = "dam" | "earthquake" | "datacenter" | "unrest" | "building";
+
+export interface TrackedFeature {
+  kind: TrackedFeatureKind;
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  // Kind-specific payload (raw GeoJSON / USGS properties, flattened).
+  data: Record<string, unknown>;
+}
+
+// Trajectory data shared between FlightTrajectoryOverlay (fetcher) and
+// FlightDetailPanel (right panel display).
+export interface TrajectoryData {
+  icao24?: string;
+  callsign: string | null;
+  trajectory: { time: number; lat: number; lon: number; alt: number | null }[];
+  origin: string | null;
+  destination: string | null;
+  originAirport?: { icao: string; name: string; city: string; lat: number; lon: number } | null;
+  destinationAirport?: { icao: string; name: string; city: string; lat: number; lon: number } | null;
+  firstSeen?: number | null;
+  lastSeen?: number | null;
+  heading?: number | null;
+  velocity?: number | null;
+  originCountry?: string | null;
+  onGround?: boolean;
+  aircraftType?: string | null;
+  aircraftModel?: string | null;
+  operator?: string | null;
+  registration?: string | null;
+  // AeroDataBox schedule fields
+  departureScheduled?: string | null;
+  departureRevised?: string | null;
+  arrivalScheduled?: string | null;
+  arrivalRevised?: string | null;
+  flightStatus?: string | null;
+  departureGate?: string | null;
+  departureTerminal?: string | null;
+  arrivalGate?: string | null;
+  arrivalTerminal?: string | null;
+  // Live ADS-B fields
+  verticalRate?: number | null;
+  squawk?: string | null;
+  sourceUrl: string;
+  fetchedAt: number;
+  error?: string;
+}
+
+export interface GlobeState {
+  // Camera state
+  cameraAltitude: number;
+  cameraCoords: CameraCoords;
+  setCameraAltitude: (h: number) => void;
+  setCameraCoords: (lon: number, lat: number, height: number) => void;
+
+  // Layer visibility
+  layerVisibility: Record<LayerId, boolean>;
+  layerLoading: Record<LayerId, boolean>;
+  layerError: Record<LayerId, string | null>;
+  toggleLayer: (id: LayerId) => void;
+  setLayerLoading: (id: LayerId, loading: boolean) => void;
+  setLayerVisible: (id: LayerId, visible: boolean) => void;
+  setLayerError: (id: LayerId, error: string | null) => void;
+
+  // Right panel: which layer's compliment is showing
+  activeRightPanel: ActiveRightPanel;
+  setActiveRightPanel: (panel: ActiveRightPanel) => void;
+
+  // Left panel open/close
+  leftPanelOpen: boolean;
+  setLeftPanelOpen: (open: boolean) => void;
+
+  // 3D tiles toggle (default off)
+  googleTilesEnabled: boolean;
+  toggleGoogleTiles: () => void;
+
+  // Borders toggle
+  bordersEnabled: boolean;
+  toggleBorders: () => void;
+
+  // Building hover-highlight toggle (gates the white tint on hovered OSM
+  // buildings + click-to-panel). Not a LayerId: it does not load a separate
+  // tileset. Requires the "3d-buildings" layer to be visible.
+  bldgHighlight: boolean;
+  toggleBldgHighlight: () => void;
+
+  // Fullscreen
+  isFullscreen: boolean;
+  toggleFullscreen: () => void;
+
+  // Saved views (persisted to localStorage)
+  savedViews: Record<string, SavedView>;
+  saveCurrentView: (name: string, view: SavedView) => void;
+
+  // Location anchoring
+  activeLocation: string | null;
+  activeContinent: string | null;
+  activeCountry: string | null;
+  activeCity: string | null;
+  setActiveLocation: (level: "continent" | "country" | "city", name: string) => void;
+  clearActiveLocation: () => void;
+
+  // Search modal
+  searchOpen: boolean;
+  setSearchOpen: (open: boolean) => void;
+
+  // Toast notification
+  toast: string | null;
+  showToast: (msg: string) => void;
+  clearToast: () => void;
+
+  // Flight selection state: populated when a flight billboard is clicked.
+  // FlightTrajectoryOverlay fetches the trajectory + renders the 3D model.
+  // FlightDetailPanel shows the telemetry in the right panel.
+  // Cleared by clicking empty space, pressing Escape, or the CLOSE button.
+  selectedFlightId: string | null;
+  selectedKind: SelectedKind;
+  trajectoryData: TrajectoryData | null;
+  trajectoryLoading: boolean;
+  trajectoryError: string | null;
+  selectFlight: (id: string | null, kind: SelectedKind) => void;
+  setTrajectoryData: (data: TrajectoryData | null) => void;
+  setTrajectoryLoading: (loading: boolean) => void;
+  setTrajectoryError: (error: string | null) => void;
+
+  // Region hover (country / state popup under cursor when borders are on)
+  hoveredRegion: RegionHit | null;
+  hoverPos: { x: number; y: number } | null;
+  setHover: (region: RegionHit | null, x: number | null, y: number | null) => void;
+  clearHover: () => void;
+
+  // Region selection (click-to-inspect when borders are on). Mutually
+  // exclusive with the flight / satellite / feature / camera / building
+  // trackers: setting one clears the others so only one detail panel owns
+  // the right rail at a time. selectedRegionRings carries the polygon outer
+  // rings (lon/lat) used to draw the white highlight on the globe; empty for
+  // city-level selections (no polygon).
+  selectedRegion: RegionHit | null;
+  selectedRegionRings: number[][][] | null;
+  selectRegion: (region: RegionHit, rings: number[][][]) => void;
+  clearRegion: () => void;
+
+  // Satellite tracking state: set when a satellite is being tracked
+  // (camera follow + orbit ring + 3D model). The right panel swaps from
+  // the picker (search + famous list) to the detail card while set.
+  // Cleared by CLOSE, Escape, empty-space click, or layer disable.
+  trackedSatelliteId: number | null;
+  trackedSatelliteName: string | null;
+  trackSatellite: (id: number, name: string) => void;
+  untrackSatellite: () => void;
+
+  // Tracked static feature (dam / earthquake / data center). Mutually
+  // exclusive with selectedFlightId / trackedSatelliteId: setting one clears
+  // the others so only one detail panel owns the right rail at a time.
+  trackedFeature: TrackedFeature | null;
+  trackFeature: (f: TrackedFeature) => void;
+  untrackFeature: () => void;
+
+  // Tracked CCTV camera. Mutually exclusive with selectedFlightId /
+  // trackedSatelliteId / trackedFeature: setting one clears the others so
+  // only one detail panel owns the right rail at a time.
+  trackedCamera: CctvCamera | null;
+  trackCamera: (cam: CctvCamera) => void;
+  untrackCamera: () => void;
+
+  // Tracked OSM building (clicked 3D tile feature). Mutually exclusive with
+  // the other trackers. Populated by the building click handler when
+  // bldgHighlight is on; FeatureDetailPanel renders the OSM tags.
+  trackedBuilding: TrackedFeature | null;
+  trackBuilding: (f: TrackedFeature) => void;
+  untrackBuilding: () => void;
+
+  // CCTV catalog + per-source filtering. The catalog is loaded once by
+  // page.tsx and shared via the store. cctvSources controls which providers
+  // are visible (all off by default; user toggles them from the right panel).
+  // cctvSourceCounts holds per-provider counts for the active city's bbox.
+  cctvSources: Record<string, boolean>;
+  cctvSourceCounts: Record<string, number>;
+  cctvCatalogLoaded: boolean;
+  cctvCameras: CctvCamera[];
+  toggleCctvSource: (provider: string) => void;
+  setCctvSourceCounts: (counts: Record<string, number>) => void;
+  setCctvCatalogLoaded: (loaded: boolean) => void;
+  setCctvCameras: (cameras: CctvCamera[]) => void;
+
+  // Replay timeline state (shared by both GIBS replay layers).
+  // replayDate is the current scrub position in YYYY-MM-DD format.
+  // replayStart/replayEnd bound the timeline (last 5 years by default).
+  // replaySpeed is days advanced per second of playback.
+  replayDate: string;
+  replayPlaying: boolean;
+  replaySpeed: number;
+  replayStart: string;
+  replayEnd: string;
+  replayActiveLayer: "big-changes-replay" | "construction-replay" | null;
+  replayLoading: boolean;
+  setReplayDate: (date: string) => void;
+  setReplayPlaying: (playing: boolean) => void;
+  setReplaySpeed: (speed: number) => void;
+  setReplayActiveLayer: (
+    layer: "big-changes-replay" | "construction-replay" | null,
+  ) => void;
+  setReplayLoading: (loading: boolean) => void;
+}
+
+const STORAGE_KEY = "spectre-v2:savedViews";
 
 function loadSavedViews(): Record<string, SavedView> {
   if (typeof window === "undefined") return {};
   try {
-    const raw = localStorage.getItem(SAVED_VIEWS_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY);
     return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
   }
 }
 
-function loadActiveCity(): string | null {
-  if (typeof window === "undefined") return null;
+function persistSavedViews(views: Record<string, SavedView>): void {
+  if (typeof window === "undefined") return;
   try {
-    return localStorage.getItem(ACTIVE_CITY_KEY);
-  } catch {
-    return null;
-  }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(views));
+  } catch {}
 }
 
-export const useGlobeStore = create<GlobeState>((set) => ({
-  hoveredCctvId: null,
-  hoveredEventId: null,
-  hoveredFlightId: null,
-  hoveredBuilding: null,
-  hoverPos: null,
-  hoveredKind: null,
-  hoveredRegion: null,
-  hoveredSatelliteId: null,
+const ALL_LAYERS: LayerId[] = [
+  "commercial-flights",
+  "private-flights",
+  "military-flights",
+  "satellites",
+  "dams",
+  "earthquakes",
+  "data-centers",
+  "civil-unrest",
+  "traffic",
+  "cctv",
+  "3d-buildings",
+  "radio",
+  "big-changes-replay",
+  "construction-replay",
+];
+
+const initialLayerVisibility = ALL_LAYERS.reduce((acc, id) => {
+  acc[id] = false;
+  return acc;
+}, {} as Record<LayerId, boolean>);
+
+const initialLayerLoading = ALL_LAYERS.reduce((acc, id) => {
+  acc[id] = false;
+  return acc;
+}, {} as Record<LayerId, boolean>);
+
+const initialLayerError = ALL_LAYERS.reduce((acc, id) => {
+  acc[id] = null;
+  return acc;
+}, {} as Record<LayerId, string | null>);
+
+export const useGlobeStore = create<GlobeState>((set, get) => ({
+  cameraAltitude: 4234,
+  cameraCoords: { lon: 106.8257, lat: -6.2505, height: 4234 },
+  setCameraAltitude: (h) => set({ cameraAltitude: h }),
+  setCameraCoords: (lon, lat, height) =>
+    set({ cameraCoords: { lon, lat, height } }),
+
+  layerVisibility: initialLayerVisibility,
+  layerLoading: initialLayerLoading,
+  layerError: initialLayerError,
+  toggleLayer: (id) => {
+    const state = get();
+    const turningOn = !state.layerVisibility[id] && !state.layerLoading[id];
+
+    if (turningOn) {
+      set({
+        layerLoading: { ...state.layerLoading, [id]: true },
+        layerError: { ...state.layerError, [id]: null },
+        activeRightPanel: id,
+      });
+      // LayerManager will call setLayerVisible when enable() completes
+    } else if (state.layerLoading[id]) {
+      // Already loading, ignore
+      return;
+    } else {
+      // Turning off
+      const newVisibility = { ...state.layerVisibility, [id]: false };
+      const anyOn = ALL_LAYERS.some((l) => newVisibility[l]);
+      const nextActive = anyOn
+        ? (ALL_LAYERS.find((l) => newVisibility[l]) ?? null)
+        : null;
+      set({
+        layerVisibility: newVisibility,
+        activeRightPanel: nextActive,
+      });
+    }
+  },
+  setLayerLoading: (id, loading) =>
+    set((state) => ({ layerLoading: { ...state.layerLoading, [id]: loading } })),
+  setLayerVisible: (id, visible) =>
+    set((state) => ({
+      layerVisibility: { ...state.layerVisibility, [id]: visible },
+      layerLoading: { ...state.layerLoading, [id]: false },
+    })),
+  setLayerError: (id, error) =>
+    set((state) => ({
+      layerError: { ...state.layerError, [id]: error },
+      layerLoading: { ...state.layerLoading, [id]: false },
+    })),
+
+  activeRightPanel: null,
+  setActiveRightPanel: (panel) => set({ activeRightPanel: panel }),
+
+  leftPanelOpen: true,
+  setLeftPanelOpen: (open) => set({ leftPanelOpen: open }),
+
+  googleTilesEnabled: false,
+  toggleGoogleTiles: () => set((state) => ({ googleTilesEnabled: !state.googleTilesEnabled })),
+
+  bordersEnabled: false,
+  toggleBorders: () => set((state) => ({ bordersEnabled: !state.bordersEnabled })),
+
+  bldgHighlight: false,
+  toggleBldgHighlight: () => set((state) => ({ bldgHighlight: !state.bldgHighlight })),
+
+  isFullscreen: false,
+  toggleFullscreen: () => {
+    if (typeof document === "undefined") return;
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.();
+      set({ isFullscreen: true });
+    } else {
+      document.exitFullscreen?.();
+      set({ isFullscreen: false });
+    }
+  },
+
+  savedViews: loadSavedViews(),
+  saveCurrentView: (name, view) =>
+    set((state) => {
+      const newViews = { ...state.savedViews, [name]: view };
+      persistSavedViews(newViews);
+      return { savedViews: newViews };
+    }),
+
+  activeLocation: null,
+  activeContinent: null,
+  activeCountry: null,
+  activeCity: null,
+  setActiveLocation: (level, name) =>
+    set({
+      activeLocation: name,
+      // Clear all levels first, then set the requested one. This ensures
+      // clicking a continent clears any focused country, etc.
+      activeContinent: level === "continent" ? name : null,
+      activeCountry: level === "country" ? name : null,
+      activeCity: level === "city" ? name : null,
+    }),
+  clearActiveLocation: () =>
+    set({
+      activeLocation: null,
+      activeContinent: null,
+      activeCountry: null,
+      activeCity: null,
+    }),
+
+  searchOpen: false,
+  setSearchOpen: (open) => set({ searchOpen: open }),
+
+  toast: null,
+  showToast: (msg) => {
+    set({ toast: msg });
+    setTimeout(() => set({ toast: null }), 2500);
+  },
+  clearToast: () => set({ toast: null }),
 
   selectedFlightId: null,
   selectedKind: null,
-  selectedAt: null,
+  trajectoryData: null,
+  trajectoryLoading: false,
+  trajectoryError: null,
+  selectFlight: (id, kind) =>
+    set((state) => ({
+      selectedFlightId: id,
+      selectedKind: kind,
+      trajectoryData: null,
+      trajectoryLoading: id != null,
+      trajectoryError: null,
+      // Clear competing trackers so only one detail panel shows.
+      trackedSatelliteId: id != null ? null : state.trackedSatelliteId,
+      trackedSatelliteName: id != null ? null : state.trackedSatelliteName,
+      trackedFeature: id != null ? null : state.trackedFeature,
+      trackedCamera: id != null ? null : state.trackedCamera,
+      trackedBuilding: id != null ? null : state.trackedBuilding,
+      selectedRegion: id != null ? null : state.selectedRegion,
+      selectedRegionRings: id != null ? null : state.selectedRegionRings,
+    })),
+  setTrajectoryData: (data) => set({ trajectoryData: data }),
+  setTrajectoryLoading: (loading) => set({ trajectoryLoading: loading }),
+  setTrajectoryError: (error) => set({ trajectoryError: error }),
 
-  leftPanelOpen: true,
-  rightPanelOpen: true,
-  replayPanelOpen: false,
+  hoveredRegion: null,
+  hoverPos: null,
+  setHover: (region, x, y) =>
+    set({
+      hoveredRegion: region,
+      hoverPos: x != null && y != null ? { x, y } : null,
+    }),
+  clearHover: () => set({ hoveredRegion: null, hoverPos: null }),
 
-  activeCity: loadActiveCity(),
-  savedViews: loadSavedViews(),
+  selectedRegion: null,
+  selectedRegionRings: null,
+  selectRegion: (region, rings) =>
+    set({
+      selectedRegion: region,
+      selectedRegionRings: rings,
+      // Clear competing trackers so only one detail panel shows.
+      selectedFlightId: null,
+      selectedKind: null,
+      trackedSatelliteId: null,
+      trackedSatelliteName: null,
+      trackedFeature: null,
+      trackedCamera: null,
+      trackedBuilding: null,
+    }),
+  clearRegion: () => set({ selectedRegion: null, selectedRegionRings: null }),
 
-  layerVisibility: {
-    buildings: false,
-    flights: false,
-    mil: false,
-    cctv: false,
-    traffic: false,
-    events: false,
-    satellites: false,
-    sentinel: false,
-    gibs: false,
-    kartaview: false,
-    borders: false,
-    bldgHighlight: false,
-  },
+  trackedSatelliteId: null,
+  trackedSatelliteName: null,
+  trackSatellite: (id, name) =>
+    set({
+      trackedSatelliteId: id,
+      trackedSatelliteName: name,
+      // Clear competing trackers so only one detail panel shows.
+      selectedFlightId: null,
+      selectedKind: null,
+      trackedFeature: null,
+      trackedCamera: null,
+      trackedBuilding: null,
+      selectedRegion: null,
+      selectedRegionRings: null,
+    }),
+  untrackSatellite: () =>
+    set({ trackedSatelliteId: null, trackedSatelliteName: null }),
 
-  // Which CCTV sources are enabled (provider → visible). All on by default.
+  trackedFeature: null,
+  trackFeature: (f) =>
+    set({
+      trackedFeature: f,
+      // Clear competing trackers so only one detail panel shows.
+      selectedFlightId: null,
+      selectedKind: null,
+      trackedSatelliteId: null,
+      trackedSatelliteName: null,
+      trackedCamera: null,
+      trackedBuilding: null,
+      selectedRegion: null,
+      selectedRegionRings: null,
+    }),
+  untrackFeature: () => set({ trackedFeature: null }),
+
+  trackedCamera: null,
+  trackCamera: (cam) =>
+    set({
+      trackedCamera: cam,
+      // Clear competing trackers so only one detail panel shows.
+      selectedFlightId: null,
+      selectedKind: null,
+      trackedSatelliteId: null,
+      trackedSatelliteName: null,
+      trackedFeature: null,
+      trackedBuilding: null,
+      selectedRegion: null,
+      selectedRegionRings: null,
+    }),
+  untrackCamera: () => set({ trackedCamera: null }),
+
+  trackedBuilding: null,
+  trackBuilding: (f) =>
+    set({
+      trackedBuilding: f,
+      // Clear competing trackers so only one detail panel shows.
+      selectedFlightId: null,
+      selectedKind: null,
+      trackedSatelliteId: null,
+      trackedSatelliteName: null,
+      trackedFeature: null,
+      trackedCamera: null,
+      selectedRegion: null,
+      selectedRegionRings: null,
+    }),
+  untrackBuilding: () => set({ trackedBuilding: null }),
+
+  // CCTV catalog + per-source filtering. All sources off by default; the
+  // right panel source list shows counts per city and lets the user toggle
+  // individual providers on. Cameras only render when a source is enabled.
   cctvSources: {
     osm: false,
     otc: false,
     palembang: false,
-    streetside: false,
+    shodan: false,
     windy: false,
+    streetside: false,
     atcs: false,
     tfl: false,
     caltrans: false,
@@ -272,99 +561,9 @@ export const useGlobeStore = create<GlobeState>((set) => ({
     lta: false,
     tfnsw: false,
   },
-
   cctvSourceCounts: {},
   cctvCatalogLoaded: false,
-  setCctvCatalogLoaded: (loaded) => set({ cctvCatalogLoaded: loaded }),
   cctvCameras: [],
-  setCctvCameras: (cameras) => set({ cctvCameras: cameras }),
-
-  cameraAltitude: 10_000_000,
-  setCameraAltitude: (alt) => set({ cameraAltitude: alt }),
-
-  layerLoading: {},
-
-  events: [],
-
-  trackedTailCallsign: null,
-  trackedTailName: null,
-  trackedTailIcao24: null,
-
-  visibleSatellites: {},
-
-  requestedSatelliteTrajectory: null,
-  setRequestedSatelliteTrajectory: (id) => set({ requestedSatelliteTrajectory: id }),
-
-  googleTilesEnabled: false,
-
-  sentinelDate: null, // null = latest available
-  sentinelGranularity: "monthly", // default to monthly (cloud-free mosaics)
-  sentinelPlaying: false, // auto-play off by default
-  gibsDate: null, // null = today
-  gibsGranularity: "monthly",
-  gibsPlaying: false,
-
-  // Road class visibility — all off by default; user toggles on what they want
-  roadClassVisibility: {
-    motorway: false,
-    trunk: false,
-    primary: false,
-    secondary: false,
-    tertiary: false,
-  },
-
-  setHover: (id, x, y, kind, building, region) =>
-    set({
-      hoveredCctvId: id != null && kind === "cctv" ? id : null,
-      hoveredEventId: id != null && kind === "event" ? id : null,
-      hoveredFlightId:
-        id != null && (kind === "flight-private" || kind === "flight-mil")
-          ? id
-          : null,
-      hoveredBuilding: id != null && kind === "building" ? (building ?? null) : null,
-      hoveredRegion:
-        id != null && kind === "region" ? (region ?? null) : null,
-      hoveredSatelliteId: id != null && kind === "satellite" ? id : null,
-      hoverPos:
-        id != null && x != null && y != null ? { x, y } : null,
-      hoveredKind: id != null ? (kind ?? null) : null,
-    }),
-  clearHover: () =>
-    set({
-      hoveredCctvId: null,
-      hoveredEventId: null,
-      hoveredFlightId: null,
-      hoveredBuilding: null,
-  hoveredRegion: null,
-  hoveredSatelliteId: null,
-      hoverPos: null,
-      hoveredKind: null,
-    }),
-  selectFlight: (id, kind, x, y) =>
-    set({
-      selectedFlightId: id,
-      selectedKind: kind,
-      selectedAt:
-        id != null && x != null && y != null ? { x, y } : null,
-    }),
-  setLeftPanelOpen: (open) => set({ leftPanelOpen: open }),
-  setRightPanelOpen: (open) => set({ rightPanelOpen: open }),
-  setReplayPanelOpen: (open) => set({ replayPanelOpen: open }),
-  toggleLayer: (id) =>
-    set((state) => {
-      const newVisibility = {
-        ...state.layerVisibility,
-        [id]: !state.layerVisibility[id],
-      };
-      // GIBS and Sentinel are mutually exclusive imagery layers.
-      // Turning one on turns the other off.
-      if (id === "gibs" && newVisibility.gibs) {
-        newVisibility.sentinel = false;
-      } else if (id === "sentinel" && newVisibility.sentinel) {
-        newVisibility.gibs = false;
-      }
-      return { layerVisibility: newVisibility };
-    }),
   toggleCctvSource: (provider) =>
     set((state) => ({
       cctvSources: {
@@ -373,140 +572,22 @@ export const useGlobeStore = create<GlobeState>((set) => ({
       },
     })),
   setCctvSourceCounts: (counts) => set({ cctvSourceCounts: counts }),
-  setLayerLoading: (id, loading) =>
-    set((state) => ({
-      layerLoading: {
-        ...state.layerLoading,
-        [id]: loading,
-      },
-    })),
-  setEvents: (events) => set({ events }),
-  setActiveCity: (name) => {
-    if (typeof window !== "undefined") {
-      try {
-        if (name) localStorage.setItem(ACTIVE_CITY_KEY, name);
-        else localStorage.removeItem(ACTIVE_CITY_KEY);
-      } catch {
-        // ignore
-      }
-    }
-    set({ activeCity: name });
-  },
-  saveView: (city, view) =>
-    set((state) => {
-      const savedViews = { ...state.savedViews, [city]: view };
-      if (typeof window !== "undefined") {
-        try {
-          localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify(savedViews));
-        } catch {
-          // localStorage full or unavailable
-        }
-      }
-      return { savedViews };
-    }),
-  setTrackedTail: (callsign, name, icao24) =>
-    set({
-      trackedTailCallsign: callsign,
-      trackedTailName: name ?? null,
-      trackedTailIcao24: icao24 ?? null,
-    }),
-  toggleSatellite: (id) =>
-    set((state) => ({
-      visibleSatellites: {
-        ...state.visibleSatellites,
-        [id]: !state.visibleSatellites[id],
-      },
-    })),
-  toggleRoadClass: (cls) =>
-    set((state) => ({
-      roadClassVisibility: {
-        ...state.roadClassVisibility,
-        [cls]: !state.roadClassVisibility[cls],
-      },
-    })),
-  setSentinelDate: (date) => set({ sentinelDate: date }),
-  setSentinelGranularity: (g) => set({ sentinelGranularity: g }),
-  setSentinelPlaying: (playing) => set({ sentinelPlaying: playing }),
-  stepSentinelDate: (direction, granularity = "monthly") =>
-    set((state) => {
-      const current = state.sentinelDate
-        ? new Date(state.sentinelDate + "T00:00:00")
-        : new Date(); // start from today if no date set
+  setCctvCatalogLoaded: (loaded) => set({ cctvCatalogLoaded: loaded }),
+  setCctvCameras: (cameras) => set({ cctvCameras: cameras }),
 
-      if (granularity === "weekly") {
-        // Step by 7 days
-        const days = direction === "back" ? -7 : 7;
-        current.setDate(current.getDate() + days);
-        // Don't go into the future
-        const now = new Date();
-        if (current > now) {
-          current.setTime(now.getTime());
-        }
-        // Don't go before 2015-06-01 (Sentinel-2A launch)
-        if (current < new Date("2015-06-01")) {
-          current.setTime(new Date("2015-06-01").getTime());
-        }
-      } else {
-        // Step by 1 month
-        const month = direction === "back" ? -1 : 1;
-        current.setMonth(current.getMonth() + month);
-        // Set to first of month for clean date
-        current.setDate(1);
-        // Don't go into the future
-        const now = new Date();
-        if (current > now) {
-          current.setTime(now.getTime());
-          current.setDate(1);
-        }
-        // Don't go before 2015-06-01 (Sentinel-2A launch)
-        if (current < new Date("2015-06-01")) {
-          current.setTime(new Date("2015-06-01").getTime());
-        }
-      }
-      const iso = localDateStr(current);
-      return { sentinelDate: iso, sentinelGranularity: granularity };
-    }),
-  setGibsDate: (date) => set({ gibsDate: date }),
-  stepGibsDate: (direction, granularity = "monthly") =>
-    set((state) => {
-      const current = state.gibsDate
-        ? new Date(state.gibsDate + "T00:00:00")
-        : new Date(); // start from today if no date set
-
-      if (granularity === "weekly") {
-        // Step by 7 days
-        const days = direction === "back" ? -7 : 7;
-        current.setDate(current.getDate() + days);
-        // Don't go into the future
-        const now = new Date();
-        if (current > now) {
-          current.setTime(now.getTime());
-        }
-        // Don't go before 2000-02-24 (MODIS Terra first light)
-        if (current < new Date("2000-02-24")) {
-          current.setTime(new Date("2000-02-24").getTime());
-        }
-      } else {
-        // Step by 1 month
-        const month = direction === "back" ? -1 : 1;
-        current.setMonth(current.getMonth() + month);
-        // Set to 1st of month for clean date
-        current.setDate(1);
-        // Don't go into the future
-        const now = new Date();
-        if (current > now) {
-          current.setTime(now.getTime());
-          current.setDate(1);
-        }
-        // Don't go before 2000-02-24 (MODIS Terra first light)
-        if (current < new Date("2000-02-24")) {
-          current.setTime(new Date("2000-02-24").getTime());
-        }
-      }
-      const iso = localDateStr(current);
-      return { gibsDate: iso, gibsGranularity: granularity };
-    }),
-  setGibsGranularity: (g) => set({ gibsGranularity: g }),
-  setGibsPlaying: (playing) => set({ gibsPlaying: playing }),
-  setGoogleTilesEnabled: (enabled) => set({ googleTilesEnabled: enabled }),
+  // Replay timeline: default to today, 5-year range, paused, 1 day/sec.
+  replayDate: toYMD(new Date()),
+  replayPlaying: false,
+  replaySpeed: 1,
+  replayStart: toYMD(
+    new Date(new Date().getFullYear() - 5, new Date().getMonth(), new Date().getDate()),
+  ),
+  replayEnd: toYMD(new Date()),
+  replayActiveLayer: null,
+  replayLoading: false,
+  setReplayDate: (date) => set({ replayDate: date }),
+  setReplayPlaying: (playing) => set({ replayPlaying: playing }),
+  setReplaySpeed: (speed) => set({ replaySpeed: speed }),
+  setReplayActiveLayer: (layer) => set({ replayActiveLayer: layer }),
+  setReplayLoading: (loading) => set({ replayLoading: loading }),
 }));

@@ -1,10 +1,10 @@
-// ICAO airport-code → coordinates resolver.
+// ICAO airport-code to coordinates resolver.
 //
 // Backed by the OpenFlights public-domain airport dataset (OurAirports
 // export) fetched once from raw.githubusercontent.com and cached in memory
 // for the lifetime of the server process. Used by /api/flights/track to
-// anchor the "landed here" marker at the destination airport when OpenSky
-// has no retained trajectory for a grounded aircraft.
+// resolve airport codes (e.g. "WIII") to city + name + coordinates so the
+// FlightDetailPanel can show "Los Angeles - LAX" instead of just "KLAX".
 
 const AIRPORTS_URL =
   "https://raw.githubusercontent.com/jpatokal/openflights/master/data/airports.dat";
@@ -70,7 +70,7 @@ async function load(): Promise<Map<string, AirportCoords>> {
         cache = parseAirportsDat(text);
         return cache;
       } catch {
-        // Offline / GitHub unreachable — cache an empty map so we don't
+        // Offline or GitHub unreachable: cache an empty map so we don't
         // retry the download on every request.
         cache = new Map();
         return cache;

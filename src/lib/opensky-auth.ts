@@ -1,4 +1,4 @@
-// OpenSky Network authentication — OAuth2 client-credentials flow.
+// OpenSky Network authentication: OAuth2 client-credentials flow.
 //
 // Since March 18, 2026 OpenSky no longer accepts username/password Basic
 // auth. You create an "API client" on your account page to get a
@@ -51,11 +51,11 @@ async function fetchAccessToken(): Promise<string | null> {
 }
 
 async function getAccessToken(): Promise<string | null> {
-  // Valid cached token → reuse.
+  // Valid cached token: reuse.
   if (cachedToken && Date.now() < tokenExpiresAt - TOKEN_REFRESH_MARGIN_MS) {
     return cachedToken;
   }
-  // Only one concurrent fetch — dedupe parallel requests from all callers.
+  // Only one concurrent fetch: dedupe parallel requests from all callers.
   if (!tokenFetchInFlight) {
     tokenFetchInFlight = fetchAccessToken().finally(() => {
       tokenFetchInFlight = null;
@@ -66,7 +66,7 @@ async function getAccessToken(): Promise<string | null> {
 
 export async function openskyAuthHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
-    "User-Agent": "spectre/0.1 (osint monitor)",
+    "User-Agent": "spectre-v2/0.1 (osint monitor)",
   };
   const token = await getAccessToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;

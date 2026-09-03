@@ -1,5 +1,5 @@
 {
-  "name": "spectre",
+  "name": "spectre-v2",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -10,28 +10,25 @@
     "postinstall": "copyfiles -u 4 \"node_modules/cesium/Build/Cesium/**/*\" public/cesium -a -E"
   },
   "dependencies": {
-    "@turf/turf": "^7.3.5",
-    "@types/papaparse": "^5.5.2",
+    "@mapbox/vector-tile": "^3.0.0",
     "cesium": "^1.143.0",
+    "hls.js": "^1.5.18",
     "next": "15.1.6",
     "node-cache": "^5.1.2",
-    "papaparse": "^5.5.4",
+    "papaparse": "^5.7.0",
+    "pbf": "^5.1.2",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "resium": "^1.18.3",
     "rss-parser": "^3.13.0",
-    "satellite.js": "^7.1.0",
-    "sharp": "^0.35.3",
-    "zod": "^4.4.3",
+    "satellite.js": "^6.0.2",
     "zustand": "^5.0.14"
-  },
-  "overrides": {
-    "@zip.js/zip.js": "^2.8.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^22",
+    "@types/papaparse": "^5.5.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "copyfiles": "^2.4.1",

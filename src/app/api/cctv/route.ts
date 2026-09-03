@@ -11,9 +11,13 @@ export const runtime = "nodejs";
 //   - OpenStreetMap surveillance cameras (Overpass API)
 //   - Windy Webcams API (global webcams with JPEG snapshots)
 //   - OpenTrafficCamMap (US state DOT cameras)
+//   - TfL JamCams (London)
+//   - Caltrans (California)
+//   - 511NY, LTA, TfNSW (key-gated)
+//   - Shodan (membership-gated)
 //
-// Sensitive cameras (Papua/Aceh) have fuzzed coords + redacted name per
-// PRD H2/S-03. Response is cached for 5 minutes server-side.
+// Sensitive cameras (Papua/Aceh) have fuzzed coords + redacted name.
+// Response is cached for 30 minutes server-side (stale-while-revalidate).
 export async function GET() {
   try {
     const cameras = await listCamerasAsync(

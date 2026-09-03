@@ -1,4 +1,4 @@
-// CCTV / webcam aggregation for the Spectre globe.
+// CCTV / webcam aggregation for the Spectre V2 globe.
 //
 // Sources (free, public portals):
 //   - Streetside Jakarta (streetside.mugnimaestra.dev) — 1,246 live DKI Jakarta
@@ -13,8 +13,49 @@
 //     snapshot URLs (token-secured, ~10-min TTL on free tier).
 //   - OpenTrafficCamMap (AidanWelch/OpenTrafficCamMap) — US state DOT camera
 //     feeds (HLS streams + some direct JPEG IMAGE_STREAM feeds).
+//   - TfL JamCams (London) — ~882 cameras with JPG/MP4.
+//   - Caltrans (California) — 12 districts, XML, JPG.
+//   - 511NY (NY State) — ~1000 cameras, requires API key.
+//   - LTA DataMall (Singapore) — ~100 cameras, requires API key.
+//   - TfNSW (NSW Australia) — ~200 cameras, requires API key.
+//   - Shodan — IP cameras with screenshots, requires membership.
 //
 // Privacy: cameras flagged is_sensitive are fuzzed + redacted in responses.
+
+// --- Manual corrections: user-submitted lat/lon/heading overrides ---
+// Loaded from cctv-corrections.json (keyed by camera ID). Applied in
+// listCamerasAsync after fetching from upstream sources. Lets the user
+// fix cameras that are off by ~200m or facing the wrong way.
+import correctionsData from "./cctv-corrections.json";
+
+interface Correction {
+  lat?: number;
+  lon?: number;
+  headingDeg?: number;
+}
+const corrections: Record<string, Correction> = correctionsData as Record<string, Correction>;
+
+export function getCctvCorrections(): Record<string, Correction> {
+  return { ...corrections };
+}
+
+export function setCctvCorrection(camId: string, correction: Correction): void {
+  corrections[camId] = { ...corrections[camId], ...correction };
+}
+
+function applyCorrections(cameras: CctvCamera[]): CctvCamera[] {
+  if (Object.keys(corrections).length === 0) return cameras;
+  return cameras.map((c) => {
+    const corr = corrections[c.id];
+    if (!corr) return c;
+    return {
+      ...c,
+      lat: corr.lat ?? c.lat,
+      lon: corr.lon ?? c.lon,
+      headingDeg: corr.headingDeg ?? c.headingDeg,
+    };
+  });
+}
 
 export type CctvProvider =
   | "palembang"
@@ -54,7 +95,7 @@ export interface CctvCamera {
 export const CCTV_CAMERAS: CctvCamera[] = [];
 
 // ============================================================================
-// Compass helpers — OSM `camera:direction` / `direction` tag → degrees
+// Compass helpers — OSM `camera:direction` / `direction` tag -> degrees
 // ============================================================================
 
 const COMPASS_DEG: Record<string, number> = {
@@ -68,13 +109,13 @@ const COMPASS_DEG: Record<string, number> = {
 
 // Parses an OSM direction tag into degrees. Accepts compass points
 // ("NE", "north", "NNW"), bare degrees ("90", "90.5"), and suffixed forms
-// ("90°", "90 deg", "90 °"). Returns undefined when unparseable.
+// ("90 deg", "90 deg"). Returns undefined when unparseable.
 export function osmDirectionToDegrees(raw: string | undefined | null): number | undefined {
   if (!raw) return undefined;
   const v = raw.trim();
   if (!v) return undefined;
   if (COMPASS_DEG[v.toUpperCase()] !== undefined) return COMPASS_DEG[v.toUpperCase()];
-  const m = v.match(/^(-?\d+(?:\.\d+)?)\s*(?:°|deg|degrees)?$/i);
+  const m = v.match(/^(-?\d+(?:\.\d+)?)\s*(?:deg|degrees)?$/i);
   if (m) {
     const deg = Number(m[1]);
     return ((deg % 360) + 360) % 360;
@@ -82,7 +123,7 @@ export function osmDirectionToDegrees(raw: string | undefined | null): number | 
   return undefined;
 }
 
-// Parses OSM `camera:angle_h` (horizontal FOV in degrees) → clamped fovDeg.
+// Parses OSM `camera:angle_h` (horizontal FOV in degrees) -> clamped fovDeg.
 export function osmDirectionToFov(raw: string | undefined | null): number | undefined {
   if (!raw) return undefined;
   const m = raw.trim().match(/^(\d+(?:\.\d+)?)/);
@@ -177,6 +218,10 @@ const OSM_BBOXES: Array<{ region: string; south: number; west: number; north: nu
   { region: "Jakarta Metro", south: -6.4, west: 106.6, north: -6.0, east: 107.0 },
   { region: "Bali", south: -8.9, west: 114.8, north: -8.4, east: 115.8 },
   { region: "NYC Metro", south: 40.4, west: -74.3, north: 41.1, east: -73.7 },
+  { region: "Tokyo Metro", south: 35.5, west: 139.5, north: 35.8, east: 139.9 },
+  { region: "London Metro", south: 51.3, west: -0.5, north: 51.7, east: 0.3 },
+  { region: "Singapore", south: 1.1, west: 103.5, north: 1.5, east: 104.0 },
+  { region: "Sydney Metro", south: -34.1, west: 150.7, north: -33.7, east: 151.3 },
 ];
 
 // Singapore sits inside the Indonesia bbox — exclude it.
@@ -264,12 +309,12 @@ export async function fetchOsmCameras(
 // DYNAMIC: Shodan — IP cameras with screenshots
 // ============================================================================
 // Screenshots are base64 JPEG inline in `opts.screenshot.data`, cached
-// in-memory so /api/cctv/snapshot can serve them without re-querying.
+// in-memory so /api/cctv/frame can serve them without re-querying.
 //
 // NOTE (2026-08): the oss plan has 0 query credits and search returns
 // HTTP 403 {"error":"Requires membership or higher to access"}. Until the
-// $49/year membership (task 3, explicitly excluded) is bought, this source
-// no-ops gracefully: missing key → [], 401/403 → []. No throw, no 502s.
+// $49/year membership is bought, this source no-ops gracefully: missing
+// key -> [], 401/403 -> []. No throw, no 502s.
 
 interface ShodanMatch {
   ip_str: string;
@@ -301,7 +346,7 @@ interface ShodanSearchResponse {
   total: number;
 }
 
-// In-memory screenshot cache: cameraId → { jpeg: Buffer, ts: number }
+// In-memory screenshot cache: cameraId -> { jpeg: Buffer, ts: number }
 const screenshotCache = new Map<string, { jpeg: Buffer; ts: number }>();
 const SCREENSHOT_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -340,7 +385,7 @@ export async function fetchShodanCameras(
     signal,
     headers: { "User-Agent": "spectre/0.1" },
   });
-  // Membership-gated (403) or bad key (401) → no-op, don't break the layer.
+  // Membership-gated (403) or bad key (401) -> no-op, don't break the layer.
   if (res.status === 401 || res.status === 403) {
     console.warn(`[cctv] Shodan ${res.status} — requires membership, skipping`);
     return [];
@@ -390,7 +435,7 @@ export async function fetchShodanCameras(
 // Auth: X-WINDY-API-KEY header (server-side only). Free tier image URLs are
 // token-secured with a 10-minute TTL — re-fetch on each call, cache 5 min.
 // Attribution: "Webcams provided by windy.com".
-// If WINDY_API_KEY is unset → no-op (return []) so the layer works the moment
+// If WINDY_API_KEY is unset -> no-op (return []) so the layer works the moment
 // the key is pasted into .env.local.
 
 interface WindyWebcam {
@@ -522,16 +567,13 @@ export async function fetchWindyCameras(
 }
 
 // ============================================================================
-// DYNAMIC: NYC DOT webcams (webcams.nyctmc.org) — New York City traffic cams
-
-// ============================================================================
 // DYNAMIC: OpenTrafficCamMap (AidanWelch/OpenTrafficCamMap) — US state DOTs
 // ============================================================================
 // master branch: 10 states, 7,029 cams. Schema:
 //   { state: { county: [{ description, latitude, longitude, direction, url,
 //                         encoding, format }] } }
 // `format: "IMAGE_STREAM"` entries are direct JPEG/MJPEG feeds usable as
-// snapshotUrl. HLS .m3u8 → streamUrl. Direction tags → headingDeg.
+// snapshotUrl. HLS .m3u8 -> streamUrl. Direction tags -> headingDeg.
 
 interface OtcCam {
   description?: string;
@@ -1110,7 +1152,7 @@ export async function fetchTfnswCameras(signal?: AbortSignal): Promise<CctvCamer
 }
 
 // ============================================================================
-// Combined accessor with 5-minute cache + sensitive-camera fuzzing
+// Combined accessor with 30-minute cache + sensitive-camera fuzzing
 // ============================================================================
 
 let cached: { cameras: CctvCamera[]; ts: number } | null = null;
@@ -1165,7 +1207,7 @@ async function listCamerasAsyncBackground(
 
   const all = [...CCTV_CAMERAS, ...dynamic];
   cached = { cameras: all, ts: Date.now() };
-  return all.map(fuzzSensitive);
+  return applyCorrections(all.map(fuzzSensitive));
 }
 
 // Synchronous accessor for the static catalog only — kept for backwards

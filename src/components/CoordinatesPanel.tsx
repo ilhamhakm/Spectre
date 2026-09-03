@@ -2,19 +2,15 @@
 
 import { useEffect, useState } from "react";
 import * as Cesium from "cesium";
-import { useGlobeStore } from "@/store/globe-store";
 
-// Decimal degrees with hemisphere suffix — "long" form vs. the previous
-// DMS (deg°min') short form. 4 decimals ≈ 11 m precision, plenty for
-// city-level views; keeps each coordinate ~10 chars wide.
 function fmtLat(value: number): string {
   const dir = value >= 0 ? "N" : "S";
-  return `${Math.abs(value).toFixed(4)}°${dir}`;
+  return `${Math.abs(value).toFixed(4)}\u00B0${dir}`;
 }
 
 function fmtLon(value: number): string {
   const dir = value >= 0 ? "E" : "W";
-  return `${Math.abs(value).toFixed(4)}°${dir}`;
+  return `${Math.abs(value).toFixed(4)}\u00B0${dir}`;
 }
 
 export default function CoordinatesPanel() {
@@ -54,7 +50,7 @@ export default function CoordinatesPanel() {
         });
       };
       tick();
-      intervalId = setInterval(tick, 100);
+      intervalId = setInterval(tick, 500);
     }
     start();
 
@@ -84,7 +80,7 @@ export default function CoordinatesPanel() {
         right: 12,
         zIndex: 60,
         fontFamily: "JetBrains Mono, monospace",
-        color: "#00D4FF",
+        color: "#ffffff",
         fontSize: 10,
         lineHeight: 1.6,
         letterSpacing: 1,
@@ -98,8 +94,8 @@ export default function CoordinatesPanel() {
         textAlign: "right",
       }}
     >
-      <div style={{ fontSize: 8, letterSpacing: 1.5, marginBottom: 4, color: "#7ac4e0" }}>
-        {copied && "✓ COPIED"}
+      <div style={{ fontSize: 8, letterSpacing: 1.5, marginBottom: 4, color: "rgba(255,255,255,0.4)" }}>
+        {copied && "\u2713 COPIED"}
       </div>
       <div style={{ display: "flex", gap: 12, whiteSpace: "nowrap" }}>
         <span>LAT {fmtLat(camera.lat)}</span>
@@ -107,7 +103,7 @@ export default function CoordinatesPanel() {
       </div>
       <div style={{ display: "flex", gap: 12, whiteSpace: "nowrap" }}>
         <span>ALT {Math.round(camera.alt).toLocaleString()}m</span>
-        <span>HDG {camera.heading.toFixed(0)}°</span>
+        <span>HDG {camera.heading.toFixed(0)}{"\u00B0"}</span>
       </div>
     </div>
   );

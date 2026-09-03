@@ -1,38 +1,26 @@
-// GET /api/events - main protest events API.
-// Build Agent B owns this. Replaces /api/flights as the core domain primitive.
+// GET /api/events - multi-source civil unrest events API.
 //
-// Query params:
-//   type            - event type filter (default: protest)
-//   from            - ISO date YYYY-MM-DD (inclusive)
-//   to              - ISO date YYYY-MM-DD (inclusive)
-//   province        - canonical province name (e.g. "DKI Jakarta")
-//   min_confidence  - 0..100 (default 0)
-//   bbox            - west,south,east,north viewport rect (e.g. -130,24,-60,50).
-//                     Only events inside this rect are returned. Omit for all.
-//   limit           - 1..200 (default 50)
+// Fetches from all Spectre v1 sources in parallel:
+//   - GDELT DOC API (global news articles, geocoded)
+//   - ACLED (verified ground-truth, requires API key)
+//   - RSS feeds (Tempo, Antara, CNN ID, Tribun, Google News, civil society)
+//   - YouTube (Indonesian news channel upload feeds)
+//   - Reddit (r/indonesia, r/Jakarta, r/indonesian)
+//   - Telegram (public channel HTML scrape)
+//   - Mastodon (federated tag timelines)
+//   - UCDP (Uppsala Conflict Data Program, CSV)
+//   - ReliefWeb (humanitarian RSS)
+//   - CIVICUS Monitor (civic space alerts RSS)
+//   - FIRMS (NASA fire detection, requires API key)
 //
-// Response: { events, total, cached, degraded, sources, generatedAt }
+// All sources return ProtestEvent[] which we convert to ParsedArticle[]
+// and run through the same pipeline as /api/gdelt:
+//   landmark refinement, clustering, crowd size, anarchy probability.
 //
-// Sources (queried in parallel via Promise.allSettled):
-//   - ACLED (if ACLED_EMAIL + ACLED_KEY env vars present)
-//   - GDELT DOC API
-//   - RSS feeds (Tempo, Antara, CNN Indonesia, Tribun)
-//
-// On any fetcher failure, returns cached data with degraded=true.
+// Response: same GeoJSON FeatureCollection as /api/gdelt.
 
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import type { ProtestEvent } from "@/lib/types";
-import { INDONESIAN_PROVINCES } from "@/lib/indonesia";
-import {
-  getCachedList,
-  setCachedList,
-  upsertEvents,
-  mergeEvents,
-  hydrateFromDisk,
-  getStoreLastUpdated,
-  type ListQuery,
-  type EventsApiResponse,
-} from "@/lib/eventsStore";
 import { fetchGdeltEvents } from "@/lib/sources/gdelt";
 import { fetchRssEvents } from "@/lib/sources/rss";
 import { fetchAcledEvents, isAcledConfigured } from "@/lib/sources/acled";
@@ -44,160 +32,129 @@ import { fetchUcdpEvents } from "@/lib/sources/ucdp";
 import { fetchReliefWebEvents } from "@/lib/sources/reliefweb";
 import { fetchCivicusEvents } from "@/lib/sources/civicus";
 import { fetchFirmsEvents, isFirmsConfigured } from "@/lib/sources/firms";
+import {
+  buildCollection,
+  refineArticleCoordinates,
+  type ParsedArticle,
+} from "@/lib/unrest-pipeline";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const runtime = "nodejs";
 
-const DEFAULT_LIMIT = 50;
-const MAX_LIMIT = 200;
+let cacheBody: string | null = null;
+let cacheTime = 0;
+const CACHE_TTL_MS = 10 * 60 * 1000;
 
-interface SourceFetchResult {
-  name: string;
-  events: ProtestEvent[];
-  ok: boolean;
-  cached: boolean;
-  skipped: boolean;
-  error?: string;
-}
+// Convert a ProtestEvent from any source into a ParsedArticle that the
+// pipeline (buildCollection) can process. Applies landmark refinement
+// using the same database as the GDELT route.
+function protestEventToArticle(ev: ProtestEvent): ParsedArticle {
+  const lat = ev.lat;
+  const lon = ev.lon;
+  const title = ev.title;
+  const country = ev.locationName ?? ev.province ?? "";
+  const eventTime = Date.parse(ev.eventTime) || Date.now();
+  const ageHours = (Date.now() - eventTime) / 3_600_000;
 
-// Agent A's indonesia.ts doesn't export a normalizeProvince helper, so we
-// inline a case-insensitive lookup against INDONESIAN_PROVINCES here.
-function normalizeProvince(input: string | null | undefined): string | null {
-  if (!input) return null;
-  const lower = input.trim().toLowerCase();
-  const match = INDONESIAN_PROVINCES.find((p) => p.toLowerCase() === lower);
-  return match ?? null;
-}
+  // Determine country name from location/province fields.
+  // The landmark database uses country names like "Indonesia", "France", etc.
+  const countryName = inferCountryName(ev);
 
-export interface Bbox {
-  west: number;
-  south: number;
-  east: number;
-  north: number;
-}
+  const refined = refineArticleCoordinates(lat, lon, countryName, title);
 
-function parseBbox(raw: string | null): Bbox | null {
-  if (!raw) return null;
-  const parts = raw.split(",").map((s) => Number(s.trim()));
-  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return null;
-  const [west, south, east, north] = parts;
-  if (south > north) return null;
-  return { west, south, east, north };
-}
-
-function inBbox(ev: ProtestEvent, bbox: Bbox): boolean {
-  if (ev.lat < bbox.south || ev.lat > bbox.north) return false;
-  // Handle antimeridian-wrapped viewports (west > east).
-  if (bbox.west <= bbox.east) {
-    return ev.lon >= bbox.west && ev.lon <= bbox.east;
-  }
-  return ev.lon >= bbox.west || ev.lon <= bbox.east;
-}
-
-function parseQuery(
-  req: NextRequest,
-): ListQuery & { minConfidence: number; limit: number; bbox: Bbox | null } {
-  const sp = req.nextUrl.searchParams;
-  const limitRaw = Number(sp.get("limit") ?? DEFAULT_LIMIT);
-  const limit = Number.isFinite(limitRaw)
-    ? Math.min(MAX_LIMIT, Math.max(1, Math.floor(limitRaw)))
-    : DEFAULT_LIMIT;
-  const minConfRaw = Number(sp.get("min_confidence") ?? 0);
-  const minConfidence = Number.isFinite(minConfRaw)
-    ? Math.min(100, Math.max(0, Math.floor(minConfRaw)))
-    : 0;
   return {
-    type: sp.get("type") ?? undefined,
-    from: sp.get("from") ?? undefined,
-    to: sp.get("to") ?? undefined,
-    province: sp.get("province") ?? undefined,
-    minConfidence,
-    limit,
-    bbox: parseBbox(sp.get("bbox")),
+    title,
+    url: ev.sources[0]?.sourceUrl ?? "",
+    seendate: ev.eventTime,
+    country: countryName,
+    domain: ev.sources[0]?.sourceName ?? "",
+    lat,
+    lon,
+    type: ev.type === "fire" || ev.type === "earthquake" ? "other" : ev.type,
+    ageHours,
+    eventTime,
+    refinedLat: refined ? refined.lat : lat,
+    refinedLon: refined ? refined.lon : lon,
+    landmark: refined ? refined.landmarkName : "",
   };
 }
 
-function applyFilters(
-  events: ProtestEvent[],
-  query: ListQuery & { minConfidence: number; bbox: Bbox | null },
-): ProtestEvent[] {
-  const province = normalizeProvince(query.province);
-  const fromTs = query.from ? Date.parse(`${query.from}T00:00:00Z`) : null;
-  const toTs = query.to ? Date.parse(`${query.to}T23:59:59Z`) : null;
+// Infer the country name from the event's location fields.
+// The landmark database keys on country names like "Indonesia", "France", etc.
+function inferCountryName(ev: ProtestEvent): string {
+  const loc = `${ev.locationName ?? ""} ${ev.province ?? ""}`.toLowerCase();
 
-  return events.filter((ev) => {
-    if (query.type && ev.type !== query.type) return false;
-    // Viewport-context filter — only events in the currently viewed region.
-    if (query.bbox && !inBbox(ev, query.bbox)) return false;
-    if (province) {
-      const evProv = (ev.province ?? ev.locationName ?? "").toLowerCase();
-      if (evProv !== province.toLowerCase()) return false;
-    }
-    if (fromTs != null || toTs != null) {
-      const evTs = Date.parse(ev.eventTime);
-      if (Number.isNaN(evTs)) return false;
-      if (fromTs != null && evTs < fromTs) return false;
-      if (toTs != null && evTs > toTs) return false;
-    }
-    if (ev.confidence < query.minConfidence) return false;
-    return true;
-  }).sort((a, b) => {
-    // Newest first so global/whole-world views aren't dominated by older
-    // persisted history (e.g. months of Indonesian data on disk).
-    const at = Date.parse(a.eventTime);
-    const bt = Date.parse(b.eventTime);
-    if (Number.isNaN(at)) return 1;
-    if (Number.isNaN(bt)) return -1;
-    return bt - at;
-  });
+  // Check if locationName or province IS a country name in our landmark DB.
+  // The landmark DB has entries for: Indonesia, Lebanon, India, France, China,
+  // Sudan, Iran, United Kingdom, Colombia, Nigeria, Thailand, Belarus, Chile,
+  // Greece, Brazil, Egypt, United States, Ukraine, Germany, Mexico, South Korea,
+  // Philippines, Argentina, Turkey, Kenya, South Africa, Venezuela, Peru.
+  const countryMap: Record<string, string> = {
+    jakarta: "Indonesia", surabaya: "Indonesia", bandung: "Indonesia",
+    medan: "Indonesia", semarang: "Indonesia", makassar: "Indonesia",
+    palembang: "Indonesia", yogyakarta: "Indonesia", denpasar: "Indonesia",
+    bali: "Indonesia", jayapura: "Indonesia", papua: "Indonesia",
+    aceh: "Indonesia", padang: "Indonesia", pekanbaru: "Indonesia",
+    banjarmasin: "Indonesia", pontianak: "Indonesia", samarinda: "Indonesia",
+    balikpapan: "Indonesia", manado: "Indonesia", ambon: "Indonesia",
+    "banda aceh": "Indonesia", tangerang: "Indonesia", depok: "Indonesia",
+    bekasi: "Indonesia", indonesia: "Indonesia",
+    beirut: "Lebanon", lebanon: "Lebanon",
+    "new delhi": "India", delhi: "India", mumbai: "India", india: "India",
+    paris: "France", france: "France",
+    "hong kong": "China", beijing: "China", shanghai: "China", china: "China",
+    khartoum: "Sudan", sudan: "Sudan",
+    tehran: "Iran", iran: "Iran",
+    london: "United Kingdom", "united kingdom": "United Kingdom", uk: "United Kingdom", britain: "United Kingdom",
+    bogota: "Colombia", colombia: "Colombia",
+    lagos: "Nigeria", abuja: "Nigeria", nigeria: "Nigeria",
+    bangkok: "Thailand", thailand: "Thailand",
+    minsk: "Belarus", belarus: "Belarus",
+    santiago: "Chile", chile: "Chile",
+    athens: "Greece", greece: "Greece",
+    brasilia: "Brazil", "sao paulo": "Brazil", brazil: "Brazil",
+    cairo: "Egypt", egypt: "Egypt",
+    washington: "United States", "new york": "United States", "united states": "United States", usa: "United States",
+    kiev: "Ukraine", kyiv: "Ukraine", ukraine: "Ukraine",
+    berlin: "Germany", germany: "Germany",
+    "mexico city": "Mexico", mexico: "Mexico",
+    seoul: "South Korea", "south korea": "South Korea",
+    manila: "Philippines", philippines: "Philippines",
+    "buenos aires": "Argentina", argentina: "Argentina",
+    istanbul: "Turkey", ankara: "Turkey", turkey: "Turkey",
+    nairobi: "Kenya", kenya: "Kenya",
+    pretoria: "South Africa", johannesburg: "South Africa", "south africa": "South Africa",
+    caracas: "Venezuela", venezuela: "Venezuela",
+    lima: "Peru", peru: "Peru",
+  };
+
+  for (const [key, country] of Object.entries(countryMap)) {
+    if (loc.includes(key)) return country;
+  }
+
+  // Fallback: use locationName as-is if it looks like a country name.
+  return ev.locationName ?? ev.province ?? "Unknown";
 }
 
-function queriedSourceNames(): string[] {
-  const names = ["gdelt", "rss", "youtube", "reddit", "telegram", "mastodon", "ucdp", "reliefweb", "civicus"];
-  if (isAcledConfigured()) names.unshift("acled");
-  if (isFirmsConfigured()) names.push("firms");
-  return names;
-}
-
-export async function GET(req: NextRequest): Promise<Response> {
-  const query = parseQuery(req);
-
-  // Hydrate from disk on first request after server start.
-  await hydrateFromDisk();
-
-  // Compute "since" date for incremental fetch.
-  // Overlap by 1 day to catch late-arriving articles from previous day.
-  const lastUpdated = getStoreLastUpdated();
-  const sinceDate = lastUpdated
-    ? new Date(lastUpdated.getTime() - 24 * 60 * 60 * 1000)
-    : null;
-  const sinceISO = sinceDate ? sinceDate.toISOString().slice(0, 10) : undefined;
-
-  // Hot path: serve from list cache.
-  const cached = getCachedList(query);
-  if (cached) {
-    const filtered = applyFilters(cached, query).slice(0, query.limit);
-    const body: EventsApiResponse = {
-      events: filtered,
-      total: filtered.length,
-      cached: true,
-      degraded: false,
-      sources: queriedSourceNames(),
-      generatedAt: new Date().toISOString(),
-    };
-    return NextResponse.json(body, {
-      headers: { "Cache-Control": "no-store" },
+export async function GET() {
+  // Serve from cache if fresh.
+  const now = Date.now();
+  if (cacheBody && now - cacheTime < CACHE_TTL_MS) {
+    return new NextResponse(cacheBody, {
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store",
+        "X-Data-Source": "events-cached",
+      },
     });
   }
 
-  // Cold path: fetch all sources in parallel. Promise.allSettled so a single
-  // source failure never breaks the response.
-  // Pass `since` to GDELT (supports date filter). RSS always returns recent,
-  // so we merge with persisted events on disk.
+  // Fetch all sources in parallel. Promise.allSettled so a single source
+  // failure never breaks the response.
   const results = await Promise.allSettled([
-    fetchAcledEvents(query.limit),
-    fetchGdeltEvents({ from: sinceISO, to: query.to, limit: query.limit }),
+    fetchAcledEvents(250),
+    fetchGdeltEvents({ limit: 250 }),
     fetchRssEvents(),
     fetchYoutubeEvents(),
     fetchRedditEvents(),
@@ -209,62 +166,49 @@ export async function GET(req: NextRequest): Promise<Response> {
     fetchFirmsEvents(),
   ]);
 
-  const sourceNames = ["acled", "gdelt", "rss", "youtube", "reddit", "telegram", "mastodon", "ucdp", "reliefweb", "civicus", "firms"];
-  const fetched: SourceFetchResult[] = results.map((r, i) => {
+  const sourceNames = [
+    "acled", "gdelt", "rss", "youtube", "reddit",
+    "telegram", "mastodon", "ucdp", "reliefweb", "civicus", "firms",
+  ];
+
+  // Collect all events from all sources.
+  const allEvents: ProtestEvent[] = [];
+  const sourceStatus: Array<{ name: string; ok: boolean; count: number; skipped: boolean }> = [];
+
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
     const name = sourceNames[i];
     if (r.status === "fulfilled") {
-      return {
-        name,
-        events: r.value.events,
-        ok: !r.value.error,
-        cached: r.value.fromCache,
-        skipped: "skipped" in r.value ? r.value.skipped : false,
-        error: r.value.error,
-      };
+      allEvents.push(...r.value.events);
+      const skipped = "skipped" in r.value ? r.value.skipped : false;
+      sourceStatus.push({ name, ok: !r.value.error, count: r.value.events.length, skipped });
+    } else {
+      sourceStatus.push({ name, ok: false, count: 0, skipped: false });
     }
-    return {
-      name,
-      events: [],
-      ok: false,
-      cached: false,
-      skipped: false,
-      error: r.reason instanceof Error ? r.reason.message : "rejected",
-    };
-  });
+  }
 
-  // Merge all events across sources (fuzzy match by province|date|title prefix).
-  const allEvents = fetched.flatMap((r) => r.events);
-  const merged = mergeEvents(allEvents);
+  // Convert all ProtestEvents to ParsedArticles for the pipeline.
+  const articles: ParsedArticle[] = allEvents.map(protestEventToArticle);
 
-  // Persist new events to disk (incremental JSONL + markdown).
-  // Then combine with previously persisted events so the response includes
-  // full history, not just the latest fetch.
-  await upsertEvents(merged);
-  const { allKnownEvents } = await import("@/lib/eventsStore");
-  const fullHistory = allKnownEvents();
+  // Run through the same pipeline as /api/gdelt:
+  // landmark refinement, clustering, crowd size, anarchy probability.
+  const collection = buildCollection(articles);
 
-  // Cache the merged list (unfiltered) so subsequent identical queries are fast.
-  setCachedList(query, fullHistory);
-
-  // Apply request-specific filters.
-  const filtered = applyFilters(fullHistory, query).slice(0, query.limit);
-
-  // Degraded = at least one source errored AND we still have data from others.
-  // If ALL sources errored and we have zero events, degraded stays true so the
-  // client knows the data is stale/empty.
-  const anyError = fetched.some((r) => !r.ok && !r.skipped);
-  const anyData = filtered.length > 0;
-
-  const body: EventsApiResponse = {
-    events: filtered,
-    total: filtered.length,
-    cached: false,
-    degraded: anyError || !anyData,
-    sources: fetched.filter((r) => !r.skipped).map((r) => r.name),
+  // Add source metadata to the response.
+  const response = {
+    ...collection,
+    sources: sourceStatus,
     generatedAt: new Date().toISOString(),
   };
 
-  return NextResponse.json(body, {
-    headers: { "Cache-Control": "no-store" },
+  cacheBody = JSON.stringify(response);
+  cacheTime = now;
+
+  return new NextResponse(cacheBody, {
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+      "X-Data-Source": "events-live",
+    },
   });
 }

@@ -1,13 +1,11 @@
 import * as Cesium from "cesium";
 
-// Initial camera view — Jakarta, low altitude, oblique pitch.
-const INITIAL_LON = 106.8257; // 106°49.54'E
-const INITIAL_LAT = -6.2505;  // 6°15.03'S
-const INITIAL_HEIGHT = 4234;
-const INITIAL_HEADING = 337;
+const INITIAL_LON = 0;
+const INITIAL_LAT = 20;
+const INITIAL_HEIGHT = 20_000_000;
+const INITIAL_HEADING = 0;
 
-// Apply scene + camera settings. Pure side-effects on the passed viewer.
-export function configureScene(viewer: Cesium.Viewer): void {
+export function configureScene(viewer: Cesium.Viewer): () => void {
   const globe = viewer.scene.globe;
   if (globe) {
     globe.enableLighting = false;
@@ -18,24 +16,42 @@ export function configureScene(viewer: Cesium.Viewer): void {
   }
 
   if (viewer.scene.skyBox) viewer.scene.skyBox.show = true;
-  if (viewer.scene.skyAtmosphere) viewer.scene.skyAtmosphere.show = true;
+  if (viewer.scene.skyAtmosphere) {
+    viewer.scene.skyAtmosphere.show = true;
+    // GEV atmosphere settings: soften the atmosphere for a seamless sky transition
+    viewer.scene.skyAtmosphere.atmosphereLightIntensity = 18;
+    viewer.scene.skyAtmosphere.saturationShift = -0.12;
+    viewer.scene.skyAtmosphere.brightnessShift = -0.08;
+  }
   if (viewer.scene.sun) viewer.scene.sun.show = true;
   viewer.scene.fog.enabled = true;
   viewer.scene.fog.density = 0.0002;
   viewer.scene.backgroundColor = Cesium.Color.BLACK;
   viewer.scene.highDynamicRange = false;
-  viewer.scene.light.intensity = 2.0;
+  // Match GEV: lower light intensity for a darker, more cinematic look
+  viewer.scene.light.intensity = 1.0;
 
-  // Request-render mode: Cesium only redraws when something changes
-  // (camera move, entity update, explicit requestRender() call). This
-  // cuts GPU/CPU usage ~90% at idle vs continuous 60fps rendering.
-  // All mutation paths in the codebase call scene.requestRender().
+  // Request-render mode: idle by default, render governor manages switching
   viewer.scene.requestRenderMode = true;
   viewer.scene.maximumRenderTimeChange = Infinity;
 
-  // Clock animation kept on for scene.preUpdate events.
+  // Cap at 60fps
+  viewer.targetFrameRate = 60;
+
   viewer.clock.shouldAnimate = true;
   viewer.useDefaultRenderLoop = true;
+
+  // Tab visibility suspension
+  const onVisibilityChange = () => {
+    if (viewer.isDestroyed()) return;
+    if (document.hidden) {
+      viewer.useDefaultRenderLoop = false;
+    } else {
+      viewer.useDefaultRenderLoop = true;
+      viewer.scene.requestRender();
+    }
+  };
+  document.addEventListener("visibilitychange", onVisibilityChange);
 
   // Camera controller options
   const cam = viewer.scene.screenSpaceCameraController;
@@ -56,8 +72,12 @@ export function configureScene(viewer: Cesium.Viewer): void {
     ),
     orientation: {
       heading: Cesium.Math.toRadians(INITIAL_HEADING),
-      pitch: Cesium.Math.toRadians(-35),
+      pitch: Cesium.Math.toRadians(-90),
       roll: 0,
     },
   });
+
+  return () => {
+    document.removeEventListener("visibilitychange", onVisibilityChange);
+  };
 }

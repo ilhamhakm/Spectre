@@ -1,5 +1,9 @@
 import * as Cesium from "cesium";
 
+// OSM Buildings (Ion asset 96188) exposes its OSM tags as per-feature batch
+// table properties. This module picks a building feature under a screen
+// coordinate and reads the tags the hover/click handlers need.
+
 export interface BuildingPickData {
   name: string | null;
   height: number | null;
@@ -7,127 +11,89 @@ export interface BuildingPickData {
   elementId: string | null;
   addrStreet: string | null;
   addrHouse: string | null;
+  // Full tag bag for the right-panel detail card (start_date, operator,
+  // website, wikipedia, building:levels, roof:shape, etc.).
+  tags: Record<string, string | number>;
 }
 
-export interface PickResult {
-  id: string;
-  kind: "cctv" | "event" | "flight-private" | "flight-mil" | "building" | "satellite" | null;
-  building?: BuildingPickData;
+function readString(feature: Cesium.Cesium3DTileFeature, k: string): string | null {
+  try {
+    if (!feature.hasProperty(k)) return null;
+    const v = feature.getProperty(k);
+    return typeof v === "string" && v.trim() ? v.trim() : null;
+  } catch {
+    return null;
+  }
 }
 
-// OSM Buildings (ion asset 96188) exposes its OSM tags as per-feature batch
-// properties. Read the ones we surface in the hover popup.
+function readNumber(feature: Cesium.Cesium3DTileFeature, k: string): number | null {
+  try {
+    if (!feature.hasProperty(k)) return null;
+    const v = feature.getProperty(k);
+    return typeof v === "number" && Number.isFinite(v) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+// Reads the surfaced tags plus the full bag of every other string/number
+// property on the feature, so the detail panel can show whatever OSM knows
+// (age, operator, website, wikipedia, levels, roof, material, etc.).
 function readBuildingProperties(feature: Cesium.Cesium3DTileFeature): BuildingPickData {
-  const get = (k: string): string | null => {
-    try {
-      if (!feature.hasProperty(k)) return null;
-      const v = feature.getProperty(k);
-      return typeof v === "string" && v.trim() ? v.trim() : null;
-    } catch {
-      return null;
+  const tags: Record<string, string | number> = {};
+  try {
+    const ids = (feature as unknown as { getPropertyIds?: () => Iterable<string> })
+      .getPropertyIds?.() ?? [];
+    for (const k of ids) {
+      try {
+        const v = feature.getProperty(k);
+        if (typeof v === "string" && v.trim()) {
+          tags[k] = v.trim();
+        } else if (typeof v === "number" && Number.isFinite(v)) {
+          tags[k] = v;
+        }
+      } catch {
+        // skip unreadable property
+      }
     }
-  };
-  const getNum = (k: string): number | null => {
-    try {
-      if (!feature.hasProperty(k)) return null;
-      const v = feature.getProperty(k);
-      return typeof v === "number" && Number.isFinite(v) ? v : null;
-    } catch {
-      return null;
-    }
-  };
-  const id = get("elementId");
+  } catch {
+    // getPropertyIds not available: fall back to surfaced fields only
+  }
+
   return {
-    name: get("name"),
-    height: getNum("height"),
-    building: get("building"),
-    elementId: id,
-    addrStreet: get("addr:street"),
-    addrHouse: get("addr:housenumber"),
+    name: readString(feature, "name"),
+    height: readNumber(feature, "height"),
+    building: readString(feature, "building"),
+    elementId: readString(feature, "elementId"),
+    addrStreet: readString(feature, "addr:street"),
+    addrHouse: readString(feature, "addr:housenumber"),
+    tags,
   };
 }
 
-// Wrapper around scene.pick that routes the picked id by prefix:
-//   cctv_          → "cctv"
-//   cctvlbl_       → "cctv"
-//   evt_           → "event"          (legacy single-event)
-//   evtlbl_        → "event"           (legacy single-event label)
-//   evtcluster_    → "event"           (clustered events)
-//   evtclusterlbl_ → "event"           (clustered events label)
-//   flt_           → "flight-private"
-//   fltlbl_        → "flight-private"
-//   mil_           → "flight-mil"
-//   millbl_        → "flight-mil"
-//   lbl_           → legacy label prefix — strip 4 chars, kind null
-//   Cesium3DTileFeature → "building"   (OSM Buildings hover)
-//   everything else → null
-//
-// Returns null when nothing pickable is at (x, y).
-export function pickAt(
+export interface BuildingPickResult {
+  feature: Cesium.Cesium3DTileFeature;
+  data: BuildingPickData;
+}
+
+// Picks the OSM Buildings feature at (x, y). Returns null when nothing
+// pickable is there or the picked primitive is not a 3D tile feature.
+export function pickBuilding(
   viewer: Cesium.Viewer,
   x: number,
-  y: number
-): PickResult | null {
-  const picked = viewer.scene.pick(new Cesium.Cartesian2(x, y));
+  y: number,
+): BuildingPickResult | null {
+  if (viewer.isDestroyed()) return null;
+  let picked: unknown;
+  try {
+    picked = viewer.scene.pick(new Cesium.Cartesian2(x, y));
+  } catch {
+    return null;
+  }
   if (!Cesium.defined(picked)) return null;
-
-  // 3D Tiles feature — this is the OSM Buildings tileset. Read its OSM
-  // tags so the hover popup can name the building. (picked.id is undefined
-  // on tile features, hence the early return before the prefix routing.)
-  if (picked instanceof Cesium.Cesium3DTileFeature) {
-    const building = readBuildingProperties(picked as Cesium.Cesium3DTileFeature);
-    return {
-      id: building.elementId ?? `bldg_${x}_${y}`,
-      kind: "building",
-      building,
-    };
-  }
-
-  if (!Cesium.defined(picked.id)) return null;
-
-  let id = String(picked.id);
-
-  if (id.startsWith("cctvlbl_")) {
-    return { id: id.slice(8), kind: "cctv" };
-  }
-  if (id.startsWith("cctv_")) {
-    return { id: id.slice(5), kind: "cctv" };
-  }
-  if (id.startsWith("evtclusterlbl_")) {
-    return { id: id.slice(14), kind: "event" };
-  }
-  if (id.startsWith("evtcluster_")) {
-    return { id: id.slice(11), kind: "event" };
-  }
-  if (id.startsWith("evtlbl_")) {
-    return { id: id.slice(7), kind: "event" };
-  }
-  if (id.startsWith("evt_")) {
-    return { id: id.slice(4), kind: "event" };
-  }
-  if (id.startsWith("fltlbl_")) {
-    return { id: id.slice(7), kind: "flight-private" };
-  }
-  if (id.startsWith("flt_")) {
-    return { id: id.slice(4), kind: "flight-private" };
-  }
-  if (id.startsWith("millbl_")) {
-    return { id: id.slice(7), kind: "flight-mil" };
-  }
-  if (id.startsWith("mil_")) {
-    return { id: id.slice(4), kind: "flight-mil" };
-  }
-  if (id.startsWith("sat-trajectory-")) {
-    return { id: id.slice(15), kind: "satellite" };
-  }
-  if (id.startsWith("sat-track-")) {
-    return { id: id.slice(10), kind: "satellite" };
-  }
-  if (id.startsWith("sat-")) {
-    return { id: id.slice(4), kind: "satellite" };
-  }
-  if (id.startsWith("lbl_")) {
-    id = id.slice(4);
-  }
-  return { id, kind: null };
+  if (!(picked instanceof Cesium.Cesium3DTileFeature)) return null;
+  return {
+    feature: picked,
+    data: readBuildingProperties(picked),
+  };
 }

@@ -9,18 +9,11 @@ interface LocationData {
   city: string | null;
 }
 
-// Round to 0.01° (~1km grid) for caching — avoids re-fetching while panning
-// within the same area.
 function gridKey(lat: number, lon: number): string {
   return `${lat.toFixed(2)},${lon.toFixed(2)}`;
 }
 
-// BigDataCloud client-side endpoint — free, no API key, sub-100ms.
-// Returns country, principalSubdivision (state), city, locality.
-async function reverseGeocode(
-  lat: number,
-  lon: number,
-): Promise<LocationData> {
+async function reverseGeocode(lat: number, lon: number): Promise<LocationData> {
   try {
     const res = await fetch(
       `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`,
@@ -38,6 +31,10 @@ async function reverseGeocode(
   }
 }
 
+function estimateTimezoneOffset(lon: number): number {
+  return Math.round(lon / 15);
+}
+
 export default function LocationPanel() {
   const [mounted, setMounted] = useState(false);
   const [location, setLocation] = useState<LocationData>({
@@ -45,6 +42,8 @@ export default function LocationPanel() {
     state: null,
     city: null,
   });
+  const [time, setTime] = useState("");
+  const [dateTz, setDateTz] = useState("");
   const cacheRef = useRef<Map<string, LocationData>>(new Map());
   const lastKeyRef = useRef<string>("");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -53,6 +52,7 @@ export default function LocationPanel() {
     setMounted(true);
   }, []);
 
+  // Location tracking
   useEffect(() => {
     let disposed = false;
 
@@ -74,21 +74,18 @@ export default function LocationPanel() {
         if (key === lastKeyRef.current) return;
         lastKeyRef.current = key;
 
-        // Check cache first
         const cached = cacheRef.current.get(key);
         if (cached) {
           setLocation(cached);
           return;
         }
 
-        // Debounce geocoding to 1s
         if (timerRef.current) clearTimeout(timerRef.current);
         timerRef.current = setTimeout(async () => {
           if (disposed) return;
           const loc = await reverseGeocode(lat, lon);
           if (disposed) return;
           cacheRef.current.set(key, loc);
-          // Cap cache at 500 entries
           if (cacheRef.current.size > 500) {
             const first = cacheRef.current.keys().next().value;
             if (first) cacheRef.current.delete(first);
@@ -110,13 +107,58 @@ export default function LocationPanel() {
     };
   }, [mounted]);
 
+  // Time tracking (updates every second, timezone from camera longitude)
+  useEffect(() => {
+    let disposed = false;
+
+    function start() {
+      if (disposed) return;
+      const v = (window as unknown as { __viewer?: Cesium.Viewer }).__viewer;
+      if (!v || v.isDestroyed()) {
+        setTimeout(start, 200);
+        return;
+      }
+
+      const update = () => {
+        if (disposed || v.isDestroyed()) return;
+        const carto = v.camera.positionCartographic;
+        const lon = (carto.longitude * 180) / Math.PI;
+        const tzOffset = estimateTimezoneOffset(lon);
+        const now = new Date();
+        const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+        const localMs = utcMs + tzOffset * 3600000;
+        const local = new Date(localMs);
+
+        const hh = String(local.getHours()).padStart(2, "0");
+        const mm = String(local.getMinutes()).padStart(2, "0");
+        const ss = String(local.getSeconds()).padStart(2, "0");
+        setTime(`${hh}:${mm}:${ss}`);
+
+        const yyyy = local.getFullYear();
+        const mo = String(local.getMonth() + 1).padStart(2, "0");
+        const dd = String(local.getDate()).padStart(2, "0");
+        const tzSign = tzOffset >= 0 ? "+" : "";
+        setDateTz(`${yyyy}-${mo}-${dd} UTC${tzSign}${tzOffset}`);
+      };
+
+      update();
+      const intervalId = setInterval(update, 1000);
+      return () => clearInterval(intervalId);
+    }
+
+    const cleanup = start();
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
+  }, [mounted]);
+
   if (!mounted) return null;
 
-  // Build display string: "CITY, STATE, COUNTRY" or fallbacks
   const parts = [location.city, location.state, location.country].filter(
     (p): p is string => !!p,
   );
-  const display = parts.join(", ") || "—";
+  const display = parts.join(", ") || "...";
 
   return (
     <div
@@ -126,7 +168,7 @@ export default function LocationPanel() {
         left: 12,
         zIndex: 60,
         fontFamily: "JetBrains Mono, monospace",
-        color: "#00D4FF",
+        color: "#ffffff",
         fontSize: 10,
         lineHeight: 1.6,
         letterSpacing: 1,
@@ -136,12 +178,12 @@ export default function LocationPanel() {
         maxWidth: 260,
       }}
     >
-      <div style={{ fontSize: 8, letterSpacing: 1.5, marginBottom: 4, color: "#7ac4e0" }}>
+      <div style={{ fontSize: 8, letterSpacing: 1.5, marginBottom: 4, color: "rgba(255,255,255,0.4)" }}>
         LOCATION
       </div>
       <div
         style={{
-          color: "#e6e8eb",
+          color: "#ffffff",
           fontSize: 11,
           letterSpacing: 0.5,
           whiteSpace: "nowrap",
@@ -150,6 +192,12 @@ export default function LocationPanel() {
         }}
       >
         {display}
+      </div>
+      <div style={{ fontSize: 11, fontWeight: 600, marginTop: 2 }}>
+        {time}
+      </div>
+      <div style={{ fontSize: 8, color: "rgba(255,255,255,0.4)" }}>
+        {dateTz}
       </div>
     </div>
   );

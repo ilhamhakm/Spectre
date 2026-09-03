@@ -1,27 +1,24 @@
 import * as Cesium from "cesium";
+import { installRenderGovernor } from "@/globe/render-governor";
+import { useGlobeStore } from "@/store/globe-store";
 
 declare global {
   interface Window {
     CESIUM_BASE_URL?: string;
+    __viewer?: Cesium.Viewer;
+    __Cesium?: typeof Cesium;
+    __store?: typeof useGlobeStore;
   }
 }
 
-// One-time Cesium global setup (base URL + tokens). Safe to call inside
-// useEffect on the client; idempotent.
 export function initCesiumGlobals(): void {
   if (typeof window === "undefined") return;
   if (!window.CESIUM_BASE_URL) {
     window.CESIUM_BASE_URL = "/cesium/";
   }
-  // Ion token only needed for Cesium World Terrain / Ion-hosted assets.
   Cesium.Ion.defaultAccessToken = process.env.NEXT_PUBLIC_CESIUM_TOKEN || "";
 }
 
-// Pure factory: builds a Cesium.Viewer against the given container.
-//
-// Globe is kept enabled (default) so that:
-// - Camera controls (WASD, arrows, zoom) work — they reference globe.ellipsoid
-// - Other layers (flights, roads, cctv) have somewhere to render
 export function createViewer(container: HTMLDivElement): Cesium.Viewer {
   initCesiumGlobals();
 
@@ -37,6 +34,7 @@ export function createViewer(container: HTMLDivElement): Cesium.Viewer {
     infoBox: false,
     selectionIndicator: false,
     navigationInstructionsInitiallyVisible: false,
+    msaaSamples: 4,
     contextOptions: {
       webgl: { preserveDrawingBuffer: true },
     },
@@ -49,9 +47,12 @@ export function createViewer(container: HTMLDivElement): Cesium.Viewer {
     ),
   });
 
-  // Reposition the Cesium credits/attribution element to bottom-left. The
-  // element is .cesium-viewer-bottom — we move it via inline style after
-  // creation.
+  // Expose viewer globally for cross-component access without prop drilling
+  window.__viewer = viewer;
+  window.__Cesium = Cesium;
+  window.__store = useGlobeStore;
+
+  // Reposition Cesium credits to bottom-left
   const creditEl = container.querySelector(".cesium-viewer-bottom") as HTMLElement | null;
   if (creditEl) {
     creditEl.style.top = "auto";
@@ -63,6 +64,8 @@ export function createViewer(container: HTMLDivElement): Cesium.Viewer {
     creditEl.style.opacity = "0.5";
     creditEl.style.pointerEvents = "none";
   }
+
+  installRenderGovernor(viewer);
 
   return viewer;
 }

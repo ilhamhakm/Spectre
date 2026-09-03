@@ -1,66 +1,64 @@
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap");
 @import "tailwindcss";
 
 :root {
-  --bg: #0a0c10;
-  --panel: #11141a;
-  --panel-2: #161a22;
-  --border: #232834;
-  --border-soft: #1c2029;
-  --text: #e6e8eb;
-  --text-dim: #8a909c;
-  --text-faint: #5a606c;
-  --accent: #d98b3a;
-  --accent-2: #4a8fd9;
-  --danger: #d94a4a;
-  --ok: #5ad97a;
+  --bg-dark: #0a0a0f;
+  --glass-bg: transparent;
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-border-hover: rgba(255, 255, 255, 0.15);
+  --accent: #ffffff;
+  --accent-dim: rgba(255, 255, 255, 0.15);
+  --accent-glow: rgba(255, 255, 255, 0.4);
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.6);
+  --text-dim: rgba(255, 255, 255, 0.35);
+  --btn-bg: rgba(255, 255, 255, 0.06);
+  --btn-bg-hover: rgba(255, 255, 255, 0.1);
+  --btn-bg-active: rgba(255, 255, 255, 0.15);
+  --btn-border: rgba(255, 255, 255, 0.12);
+  --btn-border-active: rgba(255, 255, 255, 0.5);
+  --panel-radius: 16px;
+  --btn-radius: 8px;
+  --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", monospace;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 * {
   box-sizing: border-box;
 }
 
-html,
-body {
+html, body {
   height: 100%;
   margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg-dark);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
+  overflow: hidden;
 }
 
 .mono {
-  font-family: ui-monospace, "SF Mono", "Cascadia Code", "Consolas", monospace;
+  font-family: var(--font-mono);
 }
 
-.entity-marker {
-  background: transparent !important;
-  border: none !important;
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
-
-.scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-.scrollbar::-webkit-scrollbar-track {
+::-webkit-scrollbar-track {
   background: transparent;
 }
-.scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(0, 212, 255, 0.25);
-  border-radius: 4px;
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
 }
-.scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 212, 255, 0.5);
-}
-
-.grid-bg {
-  background-image: linear-gradient(rgba(35, 40, 52, 0.4) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(35, 40, 52, 0.4) 1px, transparent 1px);
-  background-size: 24px 24px;
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 
-/* Reposition Cesium credits/attribution to bottom-left. */
+/* Cesium credits repositioned */
 .cesium-viewer-bottom {
   top: auto !important;
   right: auto !important;
@@ -76,8 +74,29 @@ body {
   opacity: 0.5 !important;
 }
 
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* Hide all Cesium default UI */
+.cesium-viewer-toolbar,
+.cesium-viewer-animationContainer,
+.cesium-viewer-timelineContainer,
+.cesium-viewer-fullscreenContainer,
+.cesium-viewer-vrContainer,
+.cesium-viewer-geocoderContainer,
+.cesium-viewer-selectionIndicatorContainer,
+.cesium-viewer-infoBoxContainer,
+.cesium-widget-errorPanel {
+  display: none !important;
+}
+
 @keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
